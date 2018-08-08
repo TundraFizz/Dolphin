@@ -258,21 +258,38 @@ function BuildDockerImage(SERVICE_NAME, REPO_NAME){
   console.log("Complete!");
 }
 
-function Nconf(serviceName, urlDomain){
+function Nconf(serviceName, urlDomain, port){
   console.log("Creating basic NGINX config file:", serviceName);
+
   var fileName = `nginx_conf.d/${serviceName}.conf`;
-  var port = "80";
+  var serverName;
+
+  if(urlDomain == null){
+    urlDomain = spawnSync("curl", ["https://api.ipify.org"]).stdout.toString("utf-8");
+    serverName = urlDomain;
+  }else{
+    serverName = `${urlDomain} www.${urlDomain}`;
+  }
 
   var lines = [
-    `upstream ${serviceName} {server ${serviceName}:80;}`,
-    `server {`                                           ,
-    `  listen ${port};`                                  ,
-    `  server_name ${urlDomain};`                        ,
-    `  location / {proxy_pass http://${serviceName};}`   ,
+    `upstream ${serviceName} {`                            ,
+    `  server ${serviceName};`                             ,
+    `}`                                                    ,
+    ``                                                     ,
+    `server {`                                             ,
+    `  listen ${port};`                                    ,
+    `  server_name ${serverName};`                         ,
+    ``                                                     ,
+    `  location / {`                                       ,
+    `    proxy_pass http://${serviceName};`                ,
+    `  }`                                                  ,
+    ``                                                     ,
+    `  location /.well-known/acme-challenge/ {`            ,
+    `    alias /ssl_challenge/.well-known/acme-challenge/;`,
+    `  }`                                                  ,
     `}`
   ];
 
-  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   if(fs.existsSync(fileName))
     fs.unlinkSync(fileName);
 
@@ -373,7 +390,10 @@ wizard = function(args){return new Promise((resolve) => {
   CloneRepository(REPO_URL);
   ConfigureSettings(REPO_NAME);
   BuildDockerImage(SERVICE_NAME, REPO_NAME);
-  Nconf(SERVICE_NAME, URL_DOMAIN);
+
+  Nconf(SERVICE_NAME, URL_DOMAIN, "80"); // Sample repository
+  Nconf("phpmyadmin", null, "9000");     // phpMyAdmin
+
   AddServiceToDockerCompose(SERVICE_NAME);
   // An optional step here is to create or import a database
   DeployDockerStack(DOCKER_STACK);
@@ -463,56 +483,18 @@ nuke_everything = function(args){return new Promise((resolve) => {
   resolve();
 })}
 
-function GenerateConfPart1(a,b,c){
-  var domain_name  = "mudki.ps";
-  var service_name = "second-service";
-  var port_number  = "80";
-
+function GenerateNginxConfForSSL(serviceName, urlDomain){
   var lines = [
-    `upstream ${service_name} {`                           ,
-    `  server ${service_name}:${port_number};`             ,
-    `}`                                                    ,
-    ``                                                     ,
-    `server {`                                             ,
-    `  listen 80;`                                         ,
-    `  server_name ${domain_name} www.${domain_name};`     ,
-    ``                                                     ,
-    `  location / {`                                       ,
-    `  location / {proxy_pass http://${service_name};}`    , // TEMPORARY!
-    // `    return 301 https://${domain_name}\$request_uri;`  ,
-    `  }`                                                  ,
-    ``                                                     ,
-    `  location /.well-known/acme-challenge/ {`            ,
-    `    alias /ssl_challenge/.well-known/acme-challenge/;`,
-    `  }`                                                  ,
-    `}`
-  ];
-
-  var fileName = `nginx_conf.d/${service_name}.conf`;
-
-  if(fs.existsSync(fileName))
-    fs.unlinkSync(fileName);
-
-  for(var i = 0; i < lines.length; i++)
-    fs.appendFileSync(fileName, lines[i] + "\n");
-}
-
-function GenerateConfPart2(a,b,c){
-  var domain_name  = "mudki.ps";
-  var service_name = "second-service";
-  var port_number  = "80";
-
-  var lines = [
-    `upstream ${service_name} {`                                                                                         ,
-    `  server ${service_name}:${port_number};`                                                                           ,
+    `upstream ${serviceName} {`                                                                                          ,
+    `  server ${serviceName};`                                                                                           ,
     `}`                                                                                                                  ,
     ``                                                                                                                   ,
     `server {`                                                                                                           ,
     `  listen 80;`                                                                                                       ,
-    `  server_name ${domain_name} www.${domain_name};`                                                                   ,
+    `  server_name ${urlDomain} www.${urlDomain};`                                                                       ,
     ``                                                                                                                   ,
     `  location / {`                                                                                                     ,
-    `    return 301 https://${domain_name}$request_uri;`                                                                 ,
+    `    return 301 https://${urlDomain}$request_uri;`                                                                   ,
     `  }`                                                                                                                ,
     ``                                                                                                                   ,
     `  location /.well-known/acme-challenge/ {`                                                                          ,
@@ -522,9 +504,9 @@ function GenerateConfPart2(a,b,c){
     ``                                                                                                                   ,
     `server {`                                                                                                           ,
     `  listen 443 ssl;`                                                                                                  ,
-    `  server_name ${domain_name} www.${domain_name};`                                                                   ,
-    `  ssl_certificate     /ssl/live/${domain_name}/fullchain.pem;`                                                      ,
-    `  ssl_certificate_key /ssl/live/${domain_name}/privkey.pem;`                                                        ,
+    `  server_name ${urlDomain} www.${urlDomain};`                                                                       ,
+    `  ssl_certificate     /ssl/live/${urlDomain}/fullchain.pem;`                                                        ,
+    `  ssl_certificate_key /ssl/live/${urlDomain}/privkey.pem;`                                                          ,
     ``                                                                                                                   ,
     `  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;`                                                                             ,
     `  ssl_prefer_server_ciphers on;`                                                                                    ,
@@ -542,11 +524,11 @@ function GenerateConfPart2(a,b,c){
     ``                                                                                                                   ,
     `  ssl_dhparam /dhparam.pem;`                                                                                        ,
     ``                                                                                                                   ,
-    `  location / {proxy_pass http://${service_name};}`                                                                         ,
+    `  location / {proxy_pass http://${serviceName};}`                                                                  ,
     `}`
   ];
 
-  var fileName = `nginx_conf.d/${service_name}.conf`;
+  var fileName = `nginx_conf.d/${serviceName}.conf`;
 
   if(fs.existsSync(fileName))
     fs.unlinkSync(fileName);
@@ -557,7 +539,7 @@ function GenerateConfPart2(a,b,c){
 
 ssl = function(args){return new Promise((resolve) => {
 
-  GenerateConfPart1(1,2,3);
+  var urlDomain = "mudki.ps";
 
   var spawn;
   spawn = spawnSync("docker", ["container", "ls"]);
@@ -582,18 +564,12 @@ ssl = function(args){return new Promise((resolve) => {
     return;
   }
 
-  // The Nginx container was found, so split by space and take the first index which is the ID
-  var nginxContainerId = output.split(" ")[0];
-
-  // Reload the Nginx config files inside of the Nginx container
-  spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
-
-  // docker run -it --rm --name certbot \
-  // -v muh-stack_ssl:/etc/letsencrypt  \
-  // -v muh-stack_ssl_challenge:/ssl_challenge \
-  // certbot/certbot certonly \
-  // --register-unsafely-without-email --webroot --agree-tos \
-  // -w /ssl_challenge --staging -d mudki.ps
+  /* docker run -it --rm --name certbot                      \
+     -v muh-stack_ssl:/etc/letsencrypt                       \
+     -v muh-stack_ssl_challenge:/ssl_challenge               \
+     certbot/certbot certonly                                \
+     --register-unsafely-without-email --webroot --agree-tos \
+     -w /ssl_challenge --staging -d mudki.ps */
 
   console.log("Creating an SSL certificate");
 
@@ -615,18 +591,19 @@ ssl = function(args){return new Promise((resolve) => {
     "-w",
     "/ssl_challenge",
     "-d",
-    "mudki.ps"]);
+    urlDomain]);
 
-  console.log("=== OUT ===================================================");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
-  console.log("=== ERR ===================================================");
-  if(spawn.stderr.length) console.log(spawn.stderr.toString("utf-8"));
-  console.log("===========================================================");
-  console.log("COMPLETE! You still need to modify the NGINX config file");
+  // console.log("=== OUT ===================================================");
+  // if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  // console.log("=== ERR ===================================================");
+  // if(spawn.stderr.length) console.log(spawn.stderr.toString("utf-8"));
+  // console.log("===========================================================");
 
-  // PART 2
-  GenerateConfPart2(1,2,3);
+  // Generate a new Nginx config file for the service
+  GenerateNginxConfForSSL("second-service", "mudki.ps");
 
+  // Split the output by space and take the first index which is the ID of the Nginx container
+  var nginxContainerId = output.split(" ")[0];
   // Reload the Nginx config files inside of the Nginx container
   spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
 
@@ -716,7 +693,7 @@ ProcessInput = function(input){return new Promise((resolve) => {
 })}
 
 function Main(){
-  console.log("========== Welcome ==========");
+  console.log("==================== Dolphin ====================");
 
   rl.setPrompt("> ");
   rl.prompt();
