@@ -83,6 +83,11 @@ var stuff = {
   "nuke_everything": {
     "helpText": "??????????",
     "commands": null
+  },
+
+  "view_all": {
+    "helpText": "??????????",
+    "commands": null
   }
 };
 
@@ -262,7 +267,7 @@ function Nconf(serviceName, urlDomain){
     `upstream ${serviceName} {server ${serviceName}:80;}`,
     `server {`                                           ,
     `  listen ${port};`                                  ,
-    `  server_name ${urlDomain};`                       ,
+    `  server_name ${urlDomain};`                        ,
     `  location / {proxy_pass http://${serviceName};}`   ,
     `}`
   ];
@@ -351,10 +356,8 @@ wizard = function(args){return new Promise((resolve) => {
 
   if("--test" in args){
     REPO_URL     = "https://github.com/TundraFizz/Docker-Sample-App/////";
-    REPO_NAME    = REPO_URL;
-    while(REPO_NAME[REPO_NAME.length-1] == "/") REPO_NAME = REPO_NAME.substring(0, REPO_NAME.length-1);
-    REPO_NAME = REPO_NAME.split("/");
-    REPO_NAME = REPO_NAME[REPO_NAME.length-1];
+    while(REPO_URL[REPO_URL.length-1] == "/") REPO_URL = REPO_URL.substring(0, REPO_URL.length-1);
+    REPO_NAME    = REPO_URL.split("/").pop();
     SERVICE_NAME = "second-service";
     URL_DOMAIN   = "mudki.ps";
     DOCKER_STACK = "muh-stack";
@@ -466,21 +469,80 @@ function GenerateConfPart1(a,b,c){
   var port_number  = "80";
 
   var lines = [
-    `upstream ${domain_name} {`,
-    `    server ${service_name}:${port_number};`,
-    `}`,
-    ``,
-    `server {`,
-    `  listen 80;`,
-    `  server_name ${domain_name} www.${domain_name};`,
-    ``,
-    `  location / {`,
-    `    return 301 https://${domain_name}\$request_uri;`,
-    `  }`,
-    ``,
-    `  location /.well-known/acme-challenge/ {`,
+    `upstream ${service_name} {`                           ,
+    `  server ${service_name}:${port_number};`             ,
+    `}`                                                    ,
+    ``                                                     ,
+    `server {`                                             ,
+    `  listen 80;`                                         ,
+    `  server_name ${domain_name} www.${domain_name};`     ,
+    ``                                                     ,
+    `  location / {`                                       ,
+    `  location / {proxy_pass http://${service_name};}`    , // TEMPORARY!
+    // `    return 301 https://${domain_name}\$request_uri;`  ,
+    `  }`                                                  ,
+    ``                                                     ,
+    `  location /.well-known/acme-challenge/ {`            ,
     `    alias /ssl_challenge/.well-known/acme-challenge/;`,
-    `  }`,
+    `  }`                                                  ,
+    `}`
+  ];
+
+  var fileName = `nginx_conf.d/${service_name}.conf`;
+
+  if(fs.existsSync(fileName))
+    fs.unlinkSync(fileName);
+
+  for(var i = 0; i < lines.length; i++)
+    fs.appendFileSync(fileName, lines[i] + "\n");
+}
+
+function GenerateConfPart2(a,b,c){
+  var domain_name  = "mudki.ps";
+  var service_name = "second-service";
+  var port_number  = "80";
+
+  var lines = [
+    `upstream ${service_name} {`                                                                                         ,
+    `  server ${service_name}:${port_number};`                                                                           ,
+    `}`                                                                                                                  ,
+    ``                                                                                                                   ,
+    `server {`                                                                                                           ,
+    `  listen 80;`                                                                                                       ,
+    `  server_name ${domain_name} www.${domain_name};`                                                                   ,
+    ``                                                                                                                   ,
+    `  location / {`                                                                                                     ,
+    `    return 301 https://${domain_name}$request_uri;`                                                                 ,
+    `  }`                                                                                                                ,
+    ``                                                                                                                   ,
+    `  location /.well-known/acme-challenge/ {`                                                                          ,
+    `    alias /ssl_challenge/.well-known/acme-challenge/;`                                                              ,
+    `  }`                                                                                                                ,
+    `}`                                                                                                                  ,
+    ``                                                                                                                   ,
+    `server {`                                                                                                           ,
+    `  listen 443 ssl;`                                                                                                  ,
+    `  server_name ${domain_name} www.${domain_name};`                                                                   ,
+    `  ssl_certificate     /ssl/live/${domain_name}/fullchain.pem;`                                                      ,
+    `  ssl_certificate_key /ssl/live/${domain_name}/privkey.pem;`                                                        ,
+    ``                                                                                                                   ,
+    `  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;`                                                                             ,
+    `  ssl_prefer_server_ciphers on;`                                                                                    ,
+    `  ssl_ciphers "ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS";`,
+    `  ssl_ecdh_curve secp384r1;`                                                                                        ,
+    `  ssl_session_cache shared:SSL:10m;`                                                                                ,
+    `  ssl_session_tickets off;`                                                                                         ,
+    `  ssl_stapling on;`                                                                                                 ,
+    `  ssl_stapling_verify on;`                                                                                          ,
+    `  resolver 8.8.8.8 8.8.4.4 valid=300s;`                                                                             ,
+    `  resolver_timeout 5s;`                                                                                             ,
+    `  add_header Strict-Transport-Security "max-age=63072000; includeSubdomains";`                                      ,
+    `  add_header X-Frame-Options DENY;`                                                                                 ,
+    `  add_header X-Content-Type-Options nosniff;`                                                                       ,
+    ``                                                                                                                   ,
+    `  ssl_dhparam /dhparam.pem;`                                                                                        ,
+    ``                                                                                                                   ,
+    `  location / {proxy_pass http://${service_name};}`                                                                         ,
     `}`
   ];
 
@@ -494,24 +556,55 @@ function GenerateConfPart1(a,b,c){
 }
 
 ssl = function(args){return new Promise((resolve) => {
-  console.log("Do something");
-  console.log(args);
 
   GenerateConfPart1(1,2,3);
 
-  // restart_nginx
-  spawnSync("docker", ["service", "update", "muh-stack_nginx"]);
+  var spawn;
+  spawn = spawnSync("docker", ["container", "ls"]);
 
-  var megaCommand = "docker run -it --rm --name certbot -v muh-stack_ssl:/etc/letsencrypt -v -v muh-stack_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d mudki.ps";
-  var child = spawnSync("docker", [
+  // Get the entire output and split it by newline
+  var output = spawn.stdout.toString("utf-8").split("\n");
+  var foundNginx = false;
+
+  // Search for the Nginx container
+  for(var i = 0; i < output.length; i++){
+    if(output[i].indexOf("nginx:") > -1){
+      output = output[i];
+      foundNginx = true;
+      break;
+    }
+  }
+
+  // Nginx container wasn't found
+  if(!foundNginx){
+    console.log("Couldn't find NGINX container; SSL certificate not generated");
+    resolve();
+    return;
+  }
+
+  // The Nginx container was found, so split by space and take the first index which is the ID
+  var nginxContainerId = output.split(" ")[0];
+
+  // Reload the Nginx config files inside of the Nginx container
+  spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
+
+  // docker run -it --rm --name certbot \
+  // -v muh-stack_ssl:/etc/letsencrypt  \
+  // -v muh-stack_ssl_challenge:/ssl_challenge \
+  // certbot/certbot certonly \
+  // --register-unsafely-without-email --webroot --agree-tos \
+  // -w /ssl_challenge --staging -d mudki.ps
+
+  console.log("Creating an SSL certificate");
+
+  spawn = spawnSync("docker", [
     "run",
-    "-it",
+    "-i",
     "--rm",
     "--name",
     "certbot",
     "-v",
     "muh-stack_ssl:/etc/letsencrypt",
-    "-v",
     "-v",
     "muh-stack_ssl_challenge:/ssl_challenge",
     "certbot/certbot",
@@ -523,6 +616,42 @@ ssl = function(args){return new Promise((resolve) => {
     "/ssl_challenge",
     "-d",
     "mudki.ps"]);
+
+  console.log("=== OUT ===================================================");
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  console.log("=== ERR ===================================================");
+  if(spawn.stderr.length) console.log(spawn.stderr.toString("utf-8"));
+  console.log("===========================================================");
+  console.log("COMPLETE! You still need to modify the NGINX config file");
+
+  // PART 2
+  GenerateConfPart2(1,2,3);
+
+  // Reload the Nginx config files inside of the Nginx container
+  spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
+
+  resolve();
+})}
+
+view_all = function(args){return new Promise((resolve) => {
+  var spawn;
+
+  spawnSync("clear");
+
+  spawn = spawnSync("docker", ["stack", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["service", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["container", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["image", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["volume", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   resolve();
 })}
@@ -604,3 +733,6 @@ function Main(){
 }
 
 Main();
+
+// Restart a service
+// spawnSync("docker", ["service", "update", "muh-stack_nginx"]);
