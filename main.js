@@ -1,5 +1,5 @@
 var fs          = require("fs");
-var yaml        = require("js-yaml");
+var yaml        = require("./yaml");
 var readline    = require("readline");
 var {spawnSync} = require("child_process");
 const SINGLE_FILES_SHA1 = "d254cbb65b7a6a46d96e31ba62a1e8e85124c9ed";
