@@ -12,9 +12,9 @@ const SINGLE_FILES_SHA1 = "d254cbb65b7a6a46d96e31ba62a1e8e85124c9ed";
      examples  : ARRAY]    */
 
 /* Example stuff
-  var child = spawnSync("tar", ["-cf", "a.tar", "single_files"]);
-  if(child.stdout.length) console.log("OUT:", child.stdout.toString("utf-8"));
-  if(child.stderr.length) console.log("ERR:", child.stderr.toString("utf-8")); */
+  var spawn = spawnSync("tar", ["-cf", "a.tar", "single_files"]);
+  if(spawn.stdout.length) console.log("OUT:", spawn.stdout.toString("utf-8"));
+  if(spawn.stderr.length) console.log("ERR:", spawn.stderr.toString("utf-8")); */
 
 var stuff = {
   "quit": {
@@ -54,7 +54,7 @@ var stuff = {
     "helpText": "Generate a basic NGINX config file",
     "commands": null
   },
-  "renew": {
+  "zrenew": {
     "helpText": "Renew SSL certificates",
     "commands": null
   },
@@ -66,7 +66,7 @@ var stuff = {
     "helpText": "Backup the database",
     "commands": null
   },
-  "restore": {
+  "zrestore": {
     "helpText": "Restore the database from most recent backup",
     "commands": null
   },
@@ -96,6 +96,21 @@ var stuff = {
   },
 
   "backup_database": {
+    "helpText": "??????????",
+    "commands": null
+  },
+
+  "restore_database": {
+    "helpText": "??????????",
+    "commands": null
+  },
+
+  "configure_mysql": {
+    "helpText": "??????????",
+    "commands": null
+  },
+
+  "testing_thing": {
     "helpText": "??????????",
     "commands": null
   }
@@ -245,7 +260,7 @@ function SanityCheck(){
 
 function CloneRepository(REPO_URL){
   console.log("Cloning repository:", REPO_URL);
-  var child = spawnSync("git", ["clone", REPO_URL]);
+  var spawn = spawnSync("git", ["clone", REPO_URL]);
   console.log("Complete!");
 }
 
@@ -257,14 +272,14 @@ function ConfigureSettings(REPO_NAME){
     return;
 
   console.log("Configuring settings:", REPO_NAME);
-  var child = spawnSync("nano", [possiblePath], {"stdio": "inherit", "detached": true});
+  var spawn = spawnSync("nano", [possiblePath], {"stdio": "inherit", "detached": true});
   console.log("Complete!");
 }
 
 function BuildDockerImage(SERVICE_NAME, REPO_NAME){
   console.log("Building Docker image:", REPO_NAME);
   console.log("         into service:", SERVICE_NAME);
-  var child = spawnSync("docker", ["build", "-t", SERVICE_NAME, REPO_NAME]);
+  var spawn = spawnSync("docker", ["build", "-t", SERVICE_NAME, REPO_NAME]);
   console.log("Complete!");
 }
 
@@ -328,14 +343,59 @@ function AddServiceToDockerCompose(SERVICE_NAME){
 
 function DeployDockerStack(DOCKER_STACK){
   console.log("Deploying to stack:", DOCKER_STACK);
-  var child = spawnSync("docker", ["stack", "deploy", "-c", "docker-compose.yml", DOCKER_STACK]);
+  var spawn = spawnSync("docker", ["stack", "deploy", "-c", "docker-compose.yml", DOCKER_STACK]);
   console.log("Complete!");
 }
 
+function ConfigureMySqlContainer(dbUsername, dbPassword){
+  var spawn    = spawnSync("docker", ["container", "ls"]);
+  var attempts = 1;
+  var mysqlContainerId = null;
+
+  console.log("Getting MySQL container...");
+
+  // Try 60 times (once per second)
+  while(attempts < 60 && !mysqlContainerId){
+    var result = GetDockerContainerIdFromImageName("mysql:");
+
+    // If a valid result was returned, set it to mysqlContainerId
+    if(result != 0){
+      mysqlContainerId = result;
+      break;
+    }
+
+    spawnSync("sleep", ["1"]);
+  }
+
+  // The MySQL container wasn't found
+  if(!mysqlContainerId){
+    console.log("Couldn't find MySQL container");
+    return;
+  }else
+    console.log("...found!");
+
+  var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
+  var commands    = [
+    `echo '[client]'                > ${mySqlConfig}`, // Create config file
+    `echo 'host=localhost'         >> ${mySqlConfig}`, // Append to the config file
+    `echo 'user=${dbUsername}'     >> ${mySqlConfig}`, // Append to the config file
+    `echo 'password=${dbPassword}' >> ${mySqlConfig}`, // Append to the config file
+    `apt-get -qq update`,                              // Update the system
+    `apt-get -qq install -y apt-utils`,                // REEEEEEEEEEEEEEEEEE!!!
+    `apt-get -qq install -y python-pip`,               // Install the Python package manager
+    `pip install -q awscli`                            // Install the AWS Command-line Interface
+  ];
+
+  // --no-install-recommends apt-utils
+
+  for(var i = 0; i < commands.length; i++)
+    RunCommandInDockerContainer(mysqlContainerId, commands[i]);
+}
+
 function GetDockerContainerIdFromImageName(name){
-  // Get the output of all containers (docker container ls), and split it by newline
+  // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
   var spawn  = spawnSync("docker", ["container", "ls"]);
-  var output = spawn.stdout.toString("utf-8").split("\n");
+  var output = spawn.stdout.toString("utf-8").trim().split("\n");
   var containers = [];
 
   // Search through all containers
@@ -344,20 +404,17 @@ function GetDockerContainerIdFromImageName(name){
     // Matches a "space" character (match 1 or more of the preceding token)
     var line = output[i].replace(/ +/g, " ");
 
-    // Break out of this loop if their is no output
-    if(line == "") break;
-
     // There are seven attributes for each container delimited by spaces:
     // Container ID, Image, Command, Created, Status, Ports, Names
     // I only care about the Container ID and Image, so extract those
     var containerId = line.split(" ")[0];
     var imageName   = line.split(" ")[1];
 
-    // If the imageName contains the name I'm looking for, save the containerId
+    // If imageName contains the name I'm looking for, save the containerId
     if(imageName.indexOf(name) > -1) containers.push(containerId);
   }
 
-  // There must be exactly one ID in containers, otherwise this function must give an error
+  // There must be exactly one ID in containers, otherwise it's an error
   if     (containers.length == 0) console.log("Error: Couldn't find container");
   else if(containers.length  > 1) console.log("Error: Ambiguous container");
   else                            return containers[0];
@@ -366,8 +423,20 @@ function GetDockerContainerIdFromImageName(name){
   return 0;
 }
 
-function RunCommandInDockerContainer(contanier, command){
-  spawnSync("docker", ["exec", contanier, "bash", "-c", command]);
+function RunCommandInDockerContainer(container, command){
+  var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
+
+  console.log(">>>", command);
+
+  if(spawn.stdout.length){
+    console.log("===== OUT ==============================");
+    console.log(spawn.stdout.toString("utf-8").trim());
+  }
+
+  if(spawn.stderr.length){
+    console.log("===== ERR ==============================");
+    console.log(spawn.stderr.toString("utf-8").trim());
+  }
 }
 /**************************************************************************************************/
 
@@ -443,13 +512,22 @@ wizard = function(args){return new Promise((resolve) => {
   Nconf("phpmyadmin", null, "9000");     // phpMyAdmin
 
   AddServiceToDockerCompose(SERVICE_NAME);
-  // An optional step here is to create or import a database
   DeployDockerStack(DOCKER_STACK);
 
-  // I think this is useful?!?!?
-  // docker service update muh-stack_nginx
+  // Wait for the mysql container to start up
+  ConfigureMySqlContainer("root", "fizz");
+
+  // An optional step here is to create or import a database
 
   console.log("ALL TASKS HAVE BEEN COMPLETED!");
+  resolve();
+
+  // Other stuff
+  // docker service update muh-stack_nginx
+})}
+
+configure_mysql = function(args){return new Promise((resolve) => {
+  ConfigureMySqlContainer("root", "fizz");
   resolve();
 })}
 
@@ -615,7 +693,7 @@ ssl = function(args){return new Promise((resolve) => {
     }
   }
 
-  // Nginx container wasn't found
+  // The NGINX container wasn't found
   if(!foundNginx){
     console.log("Couldn't find NGINX container; SSL certificate not generated");
     resolve();
@@ -725,23 +803,31 @@ create_database = function(args){return new Promise((resolve) => {
 })}
 
 backup_database = function(args){return new Promise((resolve) => {
-  var dbName      = "coss";
-  var dbUsername  = "root";
-  var dbPassword  = "fizz";
-  var bucketName  = "leif-mysql-backups";
-  var currentTime = "currentTime"; // $(date "+%Y-%m-%dT%H-%M-%S");
+  var date  = new Date();
+  var year  = date.getFullYear(); // 4-digit year
+  var month = date.getMonth()+1;  // [0-11]
+  var day   = date.getDate();     // [1-31]
+  var hours = date.getHours();    // [0-23]
+  var mins  = date.getMinutes();  // [0-59]
+  var secs  = date.getSeconds();  // [0-59]
+
+  if(month < 10) month = "0" + month;
+  if(day   < 10) day   = "0" + day;
+  if(hours < 10) hours = "0" + hours;
+  if(mins  < 10) mins  = "0" + mins;
+  if(secs  < 10) secs  = "0" + secs;
+
+  var dbName      = "coss";               // VARIABLE
+  var dbUsername  = "root";               // VARIABLE
+  var dbPassword  = "fizz";               // VARIABLE
+  var bucketName  = "leif-mysql-backups"; // VARIABLE
+
+  var currentTime = `${year}-${month}-${day}T${hours}-${mins}-${secs}`;
   var fileName    = `mysql-backup-${currentTime}.sql.gz`;
 
   var containerId = GetDockerContainerIdFromImageName("mysql");
 
   var commands = [
-    `echo '[client]'                > config.cnf`,
-    `echo 'host=localhost'         >> config.cnf`,
-    `echo 'user=${dbUsername}'     >> config.cnf`,
-    `echo 'password=${dbPassword}' >> config.cnf`,
-    `apt-get -qq update`,                                                            // Update the system
-    `apt-get -qq install -y python-pip`,                                             // Install the Python package manager
-    `pip install -q awscli`,                                                         // Install the AWS Command-line Interface
     `mysqldump --defaults-extra-file=/config.cnf ${dbName} | gzip -9 > ${fileName}`, // Create a backup on the container (the mysqldump command will overwrite any existing mysql-backup file)
     `aws s3 cp ${fileName} s3://${bucketName}`,                                      // Send the backup to my AWS S3 bucket
     `rm ${fileName}`                                                                 // Remove the backup file on the container
@@ -750,52 +836,76 @@ backup_database = function(args){return new Promise((resolve) => {
   RunCommandInDockerContainer(containerId, commands[0]);
   RunCommandInDockerContainer(containerId, commands[1]);
   RunCommandInDockerContainer(containerId, commands[2]);
-  RunCommandInDockerContainer(containerId, commands[3]);
-  RunCommandInDockerContainer(containerId, commands[4]);
-  RunCommandInDockerContainer(containerId, commands[5]);
-  RunCommandInDockerContainer(containerId, commands[6]);
-  RunCommandInDockerContainer(containerId, commands[7]);
-  RunCommandInDockerContainer(containerId, commands[8]);
-  RunCommandInDockerContainer(containerId, commands[9]);
-
   resolve();
 })}
 
 restore_database = function(args){return new Promise((resolve) => {
+  var dbName      = "coss";
+  var dbUsername  = "root";
+  var dbPassword  = "fizz";
+  var bucketName  = "leif-mysql-backups";
 
-  // TODO!
+  var fileName    = null;
+  var containerId = GetDockerContainerIdFromImageName("mysql");
 
+  var commands = [
+    `aws s3 ls ${bucketName} | sort | tail -n 1`
+  ];
+
+  // RunCommandInDockerContainer(containerId, commands[0]);
+
+  var command = `aws s3 ls leif-mysql-backups`;
+  var spawn   = spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
+
+  if(spawn.stdout.length){
+    // A list of files will be returned in alphanumeric order. This means that the most
+    // recent MySQL backup file will be at the end. Trim the string to remove newlines,
+    // split the string by newline, and pop the final result
+    fileName = spawn.stdout.toString("utf-8").trim().split("\n").pop();
+
+    // The result will be something like this:
+    // 2018-08-10 21:14:19     4992     mysql-backup-2018-08-10T21-14-17.sql.gz
+    // I only need the file name at the end, so split by space and pop the final result
+    fileName = fileName.split(" ").pop();
+  }
+
+  // if(spawn.stderr.length){
+  //   console.log("=== ERR ================================================");
+  //   console.log(spawn.stderr.toString("utf-8"));
+  //   console.log("========================================================");
+  // }
+
+  command = `aws s3 cp s3://leif-mysql-backups/${fileName} ${fileName}`;
+  spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
+
+  // mysql -u root -pfizz -e 'create database lmaoitworks'
+  // command = `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`;
+  command = `mysql -e 'create database ${dbName}'`;
+  spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
+
+  // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -p your_database
+  // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -pfizz lmaoitworks
+  // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql lmaoitworks
+  command = `zcat ${fileName} | mysql ${dbName}`;
+  spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
+
+  // mysql --defaults-file=./config.cnf
+  // mysql --defaults-file=/home/user/.my.cnf database
+
+  // command = `rm ${fileName}`;
+  // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
+
+  resolve();
 
   /*
     echo "Restoring the database..."
 
-    db_username="${1}"
-    db_password="${2}"
-    db_database="${3}"
-    bucket_name="${4}"
+    dbName    ="${3}"
+    dbUsername="${1}"
+    dbPassword="${2}"
+    bucketName="${4}"
 
-    # Save the container that has the word "mysql" in its name as a variable
-    mysql_container=$(docker container ls | grep mysql | grep -Eo '^[^ ]+')
-
-    # Save a configuration file for MySQL
-    docker exec "${mysql_container}" bash -c "echo '[client]'                 > config.cnf"
-    docker exec "${mysql_container}" bash -c "echo 'host=localhost'          >> config.cnf"
-    docker exec "${mysql_container}" bash -c "echo 'user=${db_username}'     >> config.cnf"
-    docker exec "${mysql_container}" bash -c "echo 'password=${db_password}' >> config.cnf"
-
-    # Update the system
-    echo "> apt-get update"
-    docker exec "${mysql_container}" bash -c "apt-get -qq update"
-
-    # Install the Python package manager
-    echo "> apt-get install -y python-pip"
-    docker exec "${mysql_container}" bash -c "apt-get -qq install -y python-pip"
-
-    # Install the AWS Command-line Interface
-    echo "> pip install awscli"
-    docker exec "${mysql_container}" bash -c "pip install -q awscli"
-
-    db_filename=$(docker exec "${mysql_container}" bash -c "aws s3 ls ${bucket_name} | sort | tail -n 1" | awk '{print $4}')
+    db_filename=$(docker exec "${mysql_container}" bash -c "aws s3 ls ${bucketName} | sort | tail -n 1" | awk '{print $4}')
     echo "> ${db_filename}"
 
     # Download the backup from S3
@@ -803,8 +913,8 @@ restore_database = function(args){return new Promise((resolve) => {
     docker exec "${mysql_container}" bash -c "aws s3 cp s3://leif-mysql-backups/${db_filename} ${db_filename}"
 
     # Create the database
-    echo "> mysql -u ${db_username} -p${db_password} -e 'create database ${db_database}'"
-    docker exec "${mysql_container}" bash -c "mysql -u ${db_username} -p${db_password} -e 'create database ${db_database}'"
+    echo "> mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'"
+    docker exec "${mysql_container}" bash -c "mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'"
 
     # Restore from backup
     echo "> ${command}"
@@ -814,6 +924,11 @@ restore_database = function(args){return new Promise((resolve) => {
     echo "> rm ${db_filename}"
     docker exec "${mysql_container}" bash -c "rm ${db_filename}"
   */
+})}
+
+testing_thing = function(args){return new Promise((resolve) => {
+  GetDockerContainerIdFromImageName("mysql");
+  resolve();
 })}
 /**************************************************************************************************/
 
@@ -895,7 +1010,6 @@ function Main(){
 Main();
 
 /***** TODO *****/
-// Restore a database
 // Display text on what happens
 // Handle errors
 
