@@ -93,6 +93,11 @@ var stuff = {
   "create_database": {
     "helpText": "??????????",
     "commands": null
+  },
+
+  "backup_database": {
+    "helpText": "??????????",
+    "commands": null
   }
 };
 
@@ -718,6 +723,98 @@ create_database = function(args){return new Promise((resolve) => {
 
   resolve();
 })}
+
+backup_database = function(args){return new Promise((resolve) => {
+  var dbName      = "coss";
+  var dbUsername  = "root";
+  var dbPassword  = "fizz";
+  var bucketName  = "leif-mysql-backups";
+  var currentTime = "currentTime"; // $(date "+%Y-%m-%dT%H-%M-%S");
+  var fileName    = `mysql-backup-${currentTime}.sql.gz`;
+
+  var containerId = GetDockerContainerIdFromImageName("mysql");
+
+  var commands = [
+    `echo '[client]'                > config.cnf`,
+    `echo 'host=localhost'         >> config.cnf`,
+    `echo 'user=${dbUsername}'     >> config.cnf`,
+    `echo 'password=${dbPassword}' >> config.cnf`,
+    `apt-get -qq update`,                                                            // Update the system
+    `apt-get -qq install -y python-pip`,                                             // Install the Python package manager
+    `pip install -q awscli`,                                                         // Install the AWS Command-line Interface
+    `mysqldump --defaults-extra-file=/config.cnf ${dbName} | gzip -9 > ${fileName}`, // Create a backup on the container (the mysqldump command will overwrite any existing mysql-backup file)
+    `aws s3 cp ${fileName} s3://${bucketName}`,                                      // Send the backup to my AWS S3 bucket
+    `rm ${fileName}`                                                                 // Remove the backup file on the container
+  ];
+
+  RunCommandInDockerContainer(containerId, commands[0]);
+  RunCommandInDockerContainer(containerId, commands[1]);
+  RunCommandInDockerContainer(containerId, commands[2]);
+  RunCommandInDockerContainer(containerId, commands[3]);
+  RunCommandInDockerContainer(containerId, commands[4]);
+  RunCommandInDockerContainer(containerId, commands[5]);
+  RunCommandInDockerContainer(containerId, commands[6]);
+  RunCommandInDockerContainer(containerId, commands[7]);
+  RunCommandInDockerContainer(containerId, commands[8]);
+  RunCommandInDockerContainer(containerId, commands[9]);
+
+  resolve();
+})}
+
+restore_database = function(args){return new Promise((resolve) => {
+
+  // TODO!
+
+
+  /*
+    echo "Restoring the database..."
+
+    db_username="${1}"
+    db_password="${2}"
+    db_database="${3}"
+    bucket_name="${4}"
+
+    # Save the container that has the word "mysql" in its name as a variable
+    mysql_container=$(docker container ls | grep mysql | grep -Eo '^[^ ]+')
+
+    # Save a configuration file for MySQL
+    docker exec "${mysql_container}" bash -c "echo '[client]'                 > config.cnf"
+    docker exec "${mysql_container}" bash -c "echo 'host=localhost'          >> config.cnf"
+    docker exec "${mysql_container}" bash -c "echo 'user=${db_username}'     >> config.cnf"
+    docker exec "${mysql_container}" bash -c "echo 'password=${db_password}' >> config.cnf"
+
+    # Update the system
+    echo "> apt-get update"
+    docker exec "${mysql_container}" bash -c "apt-get -qq update"
+
+    # Install the Python package manager
+    echo "> apt-get install -y python-pip"
+    docker exec "${mysql_container}" bash -c "apt-get -qq install -y python-pip"
+
+    # Install the AWS Command-line Interface
+    echo "> pip install awscli"
+    docker exec "${mysql_container}" bash -c "pip install -q awscli"
+
+    db_filename=$(docker exec "${mysql_container}" bash -c "aws s3 ls ${bucket_name} | sort | tail -n 1" | awk '{print $4}')
+    echo "> ${db_filename}"
+
+    # Download the backup from S3
+    echo "> aws s3 cp s3://leif-mysql-backups/${db_filename} ${db_filename}"
+    docker exec "${mysql_container}" bash -c "aws s3 cp s3://leif-mysql-backups/${db_filename} ${db_filename}"
+
+    # Create the database
+    echo "> mysql -u ${db_username} -p${db_password} -e 'create database ${db_database}'"
+    docker exec "${mysql_container}" bash -c "mysql -u ${db_username} -p${db_password} -e 'create database ${db_database}'"
+
+    # Restore from backup
+    echo "> ${command}"
+    docker exec "${mysql_container}" bash -c "${command}"
+
+    # Remove the backup file on the container
+    echo "> rm ${db_filename}"
+    docker exec "${mysql_container}" bash -c "rm ${db_filename}"
+  */
+})}
 /**************************************************************************************************/
 
 function ParseCommandAndArgs(input){
@@ -798,9 +895,9 @@ function Main(){
 Main();
 
 /***** TODO *****/
-// Backup a databse
 // Restore a database
-// Create a new database
+// Display text on what happens
+// Handle errors
 
 // Restart a service
 // spawnSync("docker", ["service", "update", "muh-stack_nginx"]);
