@@ -88,6 +88,11 @@ var stuff = {
   "view_all": {
     "helpText": "??????????",
     "commands": null
+  },
+
+  "create_database": {
+    "helpText": "??????????",
+    "commands": null
   }
 };
 
@@ -321,6 +326,44 @@ function DeployDockerStack(DOCKER_STACK){
   var child = spawnSync("docker", ["stack", "deploy", "-c", "docker-compose.yml", DOCKER_STACK]);
   console.log("Complete!");
 }
+
+function GetDockerContainerIdFromImageName(name){
+  // Get the output of all containers (docker container ls), and split it by newline
+  var spawn  = spawnSync("docker", ["container", "ls"]);
+  var output = spawn.stdout.toString("utf-8").split("\n");
+  var containers = [];
+
+  // Search through all containers
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // Break out of this loop if their is no output
+    if(line == "") break;
+
+    // There are seven attributes for each container delimited by spaces:
+    // Container ID, Image, Command, Created, Status, Ports, Names
+    // I only care about the Container ID and Image, so extract those
+    var containerId = line.split(" ")[0];
+    var imageName   = line.split(" ")[1];
+
+    // If the imageName contains the name I'm looking for, save the containerId
+    if(imageName.indexOf(name) > -1) containers.push(containerId);
+  }
+
+  // There must be exactly one ID in containers, otherwise this function must give an error
+  if     (containers.length == 0) console.log("Error: Couldn't find container");
+  else if(containers.length  > 1) console.log("Error: Ambiguous container");
+  else                            return containers[0];
+
+  // Return 0 to signify an error
+  return 0;
+}
+
+function RunCommandInDockerContainer(contanier, command){
+  spawnSync("docker", ["exec", contanier, "bash", "-c", command]);
+}
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
@@ -431,10 +474,20 @@ nuke_everything = function(args){return new Promise((resolve) => {
     }
   }
 
-  for(var i = 0; i < listOfImages.length; i++){
-    if(listOfImages[i]){
-      spawnSync("docker", ["rmi", "-f", listOfImages[i]]);
-      console.log("DELETED IMAGE: ", listOfImages[i]);
+  // Some images rely on others, so continuously repeat this loop until all images have been removed
+  while(true){
+    var listOfImages = spawnSync("docker", ["images", "-q"]);
+    listOfImages = listOfImages.stdout.toString("utf-8").trim().split("\n");
+
+    // If index zero of listOfImages is blank, then all images have been removed
+    if(listOfImages[0] == "")
+      break;
+
+    for(var i = 0; i < listOfImages.length; i++){
+      if(listOfImages[i]){
+        var spawn = spawnSync("docker", ["rmi", "-f", listOfImages[i]]);
+        if(spawn.stdout.length) console.log("DELETED IMAGE: ", listOfImages[i]);
+      }
     }
   }
 
@@ -564,6 +617,9 @@ ssl = function(args){return new Promise((resolve) => {
     return;
   }
 
+  // Split the output by space and take the first index which is the ID of the Nginx container
+  var nginxContainerId = output.split(" ")[0];
+
   /* docker run -it --rm --name certbot                      \
      -v muh-stack_ssl:/etc/letsencrypt                       \
      -v muh-stack_ssl_challenge:/ssl_challenge               \
@@ -602,8 +658,6 @@ ssl = function(args){return new Promise((resolve) => {
   // Generate a new Nginx config file for the service
   GenerateNginxConfForSSL("second-service", "mudki.ps");
 
-  // Split the output by space and take the first index which is the ID of the Nginx container
-  var nginxContainerId = output.split(" ")[0];
   // Reload the Nginx config files inside of the Nginx container
   spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
 
@@ -629,6 +683,38 @@ view_all = function(args){return new Promise((resolve) => {
 
   spawn = spawnSync("docker", ["volume", "ls"]);
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  resolve();
+})}
+
+create_database = function(args){return new Promise((resolve) => {
+  var containerId  = GetDockerContainerIdFromImageName("mysql");
+
+  // Required arguments:
+  // fileName   | Name of the file to create the database from
+  // dbPassword | Password to the database
+  //
+  // Optional arguments:
+  // dbName     | Name of the database that will be created [fileName minus extension]
+  // dbUsername | Username to the database [root]
+
+  var fileName   = "coss.sql";
+  var dbName     = "coss";
+  var dbUsername = "root";
+  var dbPassword = "fizz";
+
+  // Copy the .sql file into the container
+  spawnSync("docker", ["cp", fileName, `${containerId}:/${fileName}`]);
+
+  var commands = [
+    `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`, // Create the database
+    `mysql -u ${dbUsername} -p${dbPassword} ${dbName} < ${fileName}`,        // Import data from the .sql file into the database
+    `rm /${fileName}`                                                        // Remove the .sql file from the container
+  ];
+
+  RunCommandInDockerContainer(containerId, commands[0]);
+  RunCommandInDockerContainer(containerId, commands[1]);
+  RunCommandInDockerContainer(containerId, commands[2]);
 
   resolve();
 })}
@@ -710,6 +796,11 @@ function Main(){
 }
 
 Main();
+
+/***** TODO *****/
+// Backup a databse
+// Restore a database
+// Create a new database
 
 // Restart a service
 // spawnSync("docker", ["service", "update", "muh-stack_nginx"]);
