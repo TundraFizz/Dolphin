@@ -113,6 +113,11 @@ var stuff = {
   "testing_thing": {
     "helpText": "??????????",
     "commands": null
+  },
+
+  "initialize": {
+    "helpText": "??????????",
+    "commands": null
   }
 };
 
@@ -219,8 +224,6 @@ function CreateBaseDockerCompose(){
 
 function SanityCheck(){
   console.log("Starting sanity check...");
-
-  //
 
   if(!fs.existsSync("docker-compose.yml")) CreateBaseDockerCompose();
   if(!fs.existsSync("logs"))               fs.mkdirSync("logs");
@@ -347,51 +350,6 @@ function DeployDockerStack(DOCKER_STACK){
   console.log("Complete!");
 }
 
-function ConfigureMySqlContainer(dbUsername, dbPassword){
-  var spawn    = spawnSync("docker", ["container", "ls"]);
-  var attempts = 1;
-  var mysqlContainerId = null;
-
-  console.log("Getting MySQL container...");
-
-  // Try 60 times (once per second)
-  while(attempts < 60 && !mysqlContainerId){
-    var result = GetDockerContainerIdFromImageName("mysql:");
-
-    // If a valid result was returned, set it to mysqlContainerId
-    if(result != 0){
-      mysqlContainerId = result;
-      break;
-    }
-
-    spawnSync("sleep", ["1"]);
-  }
-
-  // The MySQL container wasn't found
-  if(!mysqlContainerId){
-    console.log("Couldn't find MySQL container");
-    return;
-  }else
-    console.log("...found!");
-
-  var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
-  var commands    = [
-    `echo '[client]'                > ${mySqlConfig}`, // Create config file
-    `echo 'host=localhost'         >> ${mySqlConfig}`, // Append to the config file
-    `echo 'user=${dbUsername}'     >> ${mySqlConfig}`, // Append to the config file
-    `echo 'password=${dbPassword}' >> ${mySqlConfig}`, // Append to the config file
-    `apt-get -qq update`,                              // Update the system
-    `apt-get -qq install -y apt-utils`,                // REEEEEEEEEEEEEEEEEE!!!
-    `apt-get -qq install -y python-pip`,               // Install the Python package manager
-    `pip install -q awscli`                            // Install the AWS Command-line Interface
-  ];
-
-  // --no-install-recommends apt-utils
-
-  for(var i = 0; i < commands.length; i++)
-    RunCommandInDockerContainer(mysqlContainerId, commands[i]);
-}
-
 function GetDockerContainerIdFromImageName(name){
   // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
   var spawn  = spawnSync("docker", ["container", "ls"]);
@@ -421,6 +379,50 @@ function GetDockerContainerIdFromImageName(name){
 
   // Return 0 to signify an error
   return 0;
+}
+
+function ConfigureMySqlContainer(dbUsername, dbPassword){
+  var attempts = 1;
+  var mysqlContainerId = null;
+
+  console.log("Getting MySQL container...");
+
+  // Try 60 times (once per second)
+  while(attempts < 60 && !mysqlContainerId){
+    var result = GetDockerContainerIdFromImageName("mysql:");
+
+    // If a valid result was returned, set it to mysqlContainerId
+    if(result != 0){
+      mysqlContainerId = result;
+      break;
+    }
+
+    spawnSync("sleep", ["1"]);
+  }
+
+  // The MySQL container wasn't found
+  if(!mysqlContainerId){
+    console.log("Couldn't find MySQL container");
+    return;
+  }else
+    console.log("...found!");
+
+  var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
+  var commands    = [
+    `echo '[mysql]'                 > ${mySqlConfig}`, // Create config file
+    `echo 'host=localhost'         >> ${mySqlConfig}`, // Append to the config file
+    `echo 'user=${dbUsername}'     >> ${mySqlConfig}`, // Append to the config file
+    `echo 'password=${dbPassword}' >> ${mySqlConfig}`  // Append to the config file
+    // `apt-get -qq update`,                              // Update the system
+    // `apt-get -qq install -y apt-utils`,                // Install apt-utils
+    // `apt-get -qq install -y python-pip`,               // Install the Python package manager
+    // `pip install -q awscli`                            // Install the AWS Command-line Interface
+  ];
+
+  // --no-install-recommends apt-utils
+
+  for(var i = 0; i < commands.length; i++)
+    RunCommandInDockerContainer(mysqlContainerId, commands[i]);
 }
 
 function RunCommandInDockerContainer(container, command){
@@ -463,6 +465,26 @@ help = function(){return new Promise((resolve) => {
   console.log();
   resolve();
 })}
+
+initialize = function(args){return new Promise((resolve) => {
+  if(fs.existsSync("docker-compose.yml")){
+    console.log("It looks like a Docker system has already been initialized");
+    console.log("If you want to reset, run the command: nuke_everything");
+    console.log("And then run the initialize command again");
+    resolve();
+    return;
+  }
+
+  var dockerStackName = "muh-stack";
+
+  SanityCheck();
+  Nconf("phpmyadmin", null, "9000");
+  DeployDockerStack(dockerStackName);
+  // ConfigureMySqlContainer("root", "fizz");
+
+  console.log("Initialization completed");
+  resolve();
+})};
 
 wizard = function(args){return new Promise((resolve) => {
   var failed = false;
