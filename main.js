@@ -13,7 +13,7 @@ const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/a.tar.gz";
   examples  : ARRAY]    */
 
 /* Example stuff
-  var spawn = spawnSync("tar", ["-cf", "temp.tar", "single_files"]);
+  var spawn = RunCommand("tar -cf temp.tar single_files");
   if(spawn.stdout.length) console.log("OUT:", spawn.stdout.toString("utf-8"));
   if(spawn.stderr.length) console.log("ERR:", spawn.stderr.toString("utf-8")); */
 
@@ -130,8 +130,7 @@ function RunCommand(command){
 }
 
 function RunCommandInDockerContainer(container, command){
-  var spawn = RunCommand(`docker exec ${container} bash -c ${command}`);
-  // var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
+  var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
 
   console.log(">>>", command);
 
@@ -151,7 +150,6 @@ function RunCommandInDockerContainer(container, command){
 function GetDockerContainerIdFromImageName(name){
   // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
   var spawn  = RunCommand("docker container ls");
-  // var spawn  = spawnSync("docker", ["container", "ls"]);
   var output = spawn.stdout.toString("utf-8").trim().split("\n");
   var containers = [];
 
@@ -294,7 +292,6 @@ function Nconf(serviceName, urlDomain, port){
 
   if(urlDomain == null){
     urlDomain = RunCommand("curl https://api.ipify.org").stdout.toString("utf-8");
-    // urlDomain = spawnSync("curl", ["https://api.ipify.org"]).stdout.toString("utf-8");
     serverName = urlDomain;
   }else{
     serverName = `${urlDomain} www.${urlDomain}`;
@@ -408,7 +405,6 @@ function BuildDockerImage(serviceName, repoName){
   console.log("Building Docker image:", repoName);
   console.log("         into service:", serviceName);
   var spawn = RunCommand(`docker build -t ${serviceName} ${repoName}`);
-  // var spawn = spawnSync("docker", ["build", "-t", serviceName, repoName]);
   console.log("Complete!");
 }
 
@@ -495,20 +491,37 @@ wizard = function(args){return new Promise((resolve) => {
     ConfigureMySqlContainer("root", "fizz");
   }
 
-  // Skip all of this if I'm just initializing
-  if(false){
-    var repoUrl     = "";
-    var repoName    = "";
-    var serviceName = "";
-    var urlDomain   = "";
-    var port        = "";
+  var repoUrl     = "";
+  var repoName    = "";
+  var serviceName = "";
+  var urlDomain   = "";
+  var port        = "";
+  var go          = false;
 
+  if("--test" in args){
+    repoUrl     = "https://github.com/TundraFizz/Docker-Sample-App";
+    urlDomain   = "mudki.ps";
+    go          = true;
+
+    // Remove all trailing forward slashes from the URL
+    while(repoUrl[repoUrl.length-1] == "/") repoUrl = repoUrl.substring(0, repoUrl.length-1);
+
+    // Extract the repository's name from the URL
+    repoName    = repoUrl.split("/").pop();
+
+    // Set the service's name to the lowercase version of the repository's name
+    serviceName = repoName.toLowerCase();
+  }
+
+  // Skip all of this if I'm just initializing
+  if(go){
     CloneRepository(repoUrl);
     ConfigureSettings(repoName);
     BuildDockerImage(serviceName, repoName);
     AddServiceToDockerCompose(serviceName);
-    Nconf(serviceName, urlDomain, port);
+    Nconf(serviceName, urlDomain, "80");
     DeployDockerStack(dockerStackName);
+    RunCommand(`docker service update muh-stack_nginx`);
   }
 
   resolve();
@@ -527,8 +540,6 @@ nuke_everything = function(args){return new Promise((resolve) => {
   // Run the commands to get the lists of Docker services and images
   var listOfServices = RunCommand("docker service ls -q");
   var listOfImages   = RunCommand("docker images -q");
-  // var listOfServices = spawnSync("docker", ["service", "ls", "-q"]);
-  // var listOfImages   = spawnSync("docker", ["images", "-q"]);
 
   // From the above commands, convert the stdout buffer into a utf-8 string
   // Then split that string of IDs into an array for each of them
@@ -538,7 +549,6 @@ nuke_everything = function(args){return new Promise((resolve) => {
   for(var i = 0; i < listOfServices.length; i++){
     if(listOfServices[i]){
       RunCommand(`docker service rm ${listOfServices[i]}`);
-      // spawnSync("docker", ["service", "rm", listOfServices[i]]);
       console.log("KILLED SERVICE:", listOfServices[i]);
     }
   }
@@ -546,7 +556,6 @@ nuke_everything = function(args){return new Promise((resolve) => {
   // Some images rely on others, so continuously repeat this loop until all images have been removed
   while(true){
     var listOfImages = RunCommand("docker images -q");
-    // var listOfImages = spawnSync("docker", ["images", "-q"]);
     listOfImages = listOfImages.stdout.toString("utf-8").trim().split("\n");
 
     // If index zero of listOfImages is blank, then all images have been removed
@@ -556,41 +565,34 @@ nuke_everything = function(args){return new Promise((resolve) => {
     for(var i = 0; i < listOfImages.length; i++){
       if(listOfImages[i]){
         var spawn = RunCommand(`docker rmi -f ${listOfImages[i]}`);
-        // var spawn = spawnSync("docker", ["rmi", "-f", listOfImages[i]]);
         if(spawn.stdout.length) console.log("DELETED IMAGE: ", listOfImages[i]);
       }
     }
   }
 
   RunCommand("docker system prune -f");
-  // spawnSync("docker", ["system", "prune", "-f"]);
   console.log("SYSTEMS PRUNED");
 
   RunCommand("docker volume prune -f");
-  // spawnSync("docker", ["volume", "prune", "-f"]);
   console.log("VOLUMES PRUNED");
 
   if(fs.existsSync("docker-compose.yml")){
     RunCommand("rm docker-compose.yml");
-    // spawnSync("rm", ["docker-compose.yml"]);
     console.log("DELETED FILE:  ", "docker-compose.yml");
   }
 
   if(fs.existsSync("logs")){
     RunCommand("rm -rf logs");
-    // spawnSync("rm", ["-rf", "logs"]);
     console.log("DELETED DIR:   ", "logs");
   }
 
   if(fs.existsSync("nginx_conf.d")){
     RunCommand("rm -rf nginx_conf.d");
-    // spawnSync("rm", ["-rf", "nginx_conf.d"]);
     console.log("DELETED DIR:   ", "nginx_conf.d");
   }
 
   if(fs.existsSync("single_files")){
     RunCommand("rm -rf single_files");
-    // spawnSync("rm", ["-rf", "single_files"]);
     console.log("DELETED DIR:   ", "single_files");
   }
 
@@ -602,12 +604,10 @@ nuke_everything = function(args){return new Promise((resolve) => {
 
   for(var i = 0; i < listOfDirectories.length; i++){
     var fileList = RunCommand(`ls ${listOfDirectories[i]}`);
-    // var fileList = spawnSync("ls", [listOfDirectories[i]]);
     fileList = fileList.stdout.toString("utf-8").trim().split("\n");
 
     if(fileList.indexOf("Dockerfile") > -1){
       RunCommand(`rm -rf ${listOfDirectories[i]}`);
-      // spawnSync("rm", ["-rf", listOfDirectories[i]]);
       console.log("DELETED DIR:   ", listOfDirectories[i]);
     }
   }
@@ -621,34 +621,26 @@ view_all = function(args){return new Promise((resolve) => {
   RunCommand("clear");
 
   spawn = RunCommand("docker stack ls");
-  // spawn = spawnSync("docker", ["stack", "ls"]);
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   spawn = RunCommand("docker service ls");
-  // spawn = spawnSync("docker", ["service", "ls"]);
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   spawn = RunCommand("docker container ls");
-  // spawn = spawnSync("docker", ["container", "ls"]);
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   spawn = RunCommand("docker container ls");
-  // spawn = spawnSync("docker", ["image", "ls"]);
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   spawn = RunCommand("docker volume ls");
-  // spawn = spawnSync("docker", ["volume", "ls"]);
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   resolve();
 })}
 
 ssl = function(args){return new Promise((resolve) => {
-
   var urlDomain = "mudki.ps";
-
-  var spawn;
-  spawn = RunCommand("docker container ls");
+  var spawn = RunCommand("docker container ls");
 
   // Get the entire output and split it by newline
   var output = spawn.stdout.toString("utf-8").split("\n");
@@ -673,6 +665,8 @@ ssl = function(args){return new Promise((resolve) => {
   // Split the output by space and take the first index which is the ID of the Nginx container
   var nginxContainerId = output.split(" ")[0];
 
+  console.log("Creating an SSL certificate");
+
   /* docker run -it --rm --name certbot                      \
      -v muh-stack_ssl:/etc/letsencrypt                       \
      -v muh-stack_ssl_challenge:/ssl_challenge               \
@@ -680,40 +674,23 @@ ssl = function(args){return new Promise((resolve) => {
      --register-unsafely-without-email --webroot --agree-tos \
      -w /ssl_challenge --staging -d mudki.ps */
 
-  console.log("Creating an SSL certificate");
+  spawn = RunCommand(`docker run -i --rm --name certbot -v muh-stack_ssl:/etc/letsencrypt -v muh-stack_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`);
 
-  spawn = spawnSync("docker", [
-    "run",
-    "-i",
-    "--rm",
-    "--name",
-    "certbot",
-    "-v",
-    "muh-stack_ssl:/etc/letsencrypt",
-    "-v",
-    "muh-stack_ssl_challenge:/ssl_challenge",
-    "certbot/certbot",
-    "certonly",
-    "--register-unsafely-without-email",
-    "--webroot",
-    "--agree-tos",
-    "-w",
-    "/ssl_challenge",
-    "-d",
-    urlDomain]);
-
-  // console.log("=== OUT ===================================================");
-  // if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
-  // console.log("=== ERR ===================================================");
-  // if(spawn.stderr.length) console.log(spawn.stderr.toString("utf-8"));
-  // console.log("===========================================================");
+  console.log("=== OUT ===================================================");
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  console.log("=== ERR ===================================================");
+  if(spawn.stderr.length) console.log(spawn.stderr.toString("utf-8"));
+  console.log("===========================================================");
 
   // Generate a new Nginx config file for the service
-  GenerateNginxConfForSSL("second-service", "mudki.ps");
+  GenerateNginxConfForSSL("yolo-swag", "mudki.ps");
 
+  // Restart the NGINX container
+  RunCommand(`docker container restart ${nginxContainerId}`);
+
+  // I DON'T THINK THIS WORKS, ONLY RESTARTING THE CONTAINER DOES!
   // Reload the Nginx config files inside of the Nginx container
-  spawn = RunCommand(`docker exec -i ${nginxContainerId} nginx -s reload`);
-  // spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
+  // spawn = RunCommand(`docker exec -i ${nginxContainerId} nginx -s reload`);
 
   resolve();
 })}
@@ -741,7 +718,6 @@ create_database = function(args){return new Promise((resolve) => {
 
   // Copy the .sql file into the container
   RunCommand(`docker cp ${fileName} ${containerId}:/${fileName}`);
-  // spawnSync("docker", ["cp", fileName, `${containerId}:/${fileName}`]);
 
   var commands = [
     `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`, // Create the database
@@ -805,7 +781,6 @@ restore_database = function(args){return new Promise((resolve) => {
   var command = `aws s3 ls leif-mysql-backups`;
   var spawn   = RunCommandInDockerContainer(containerId, command);
   // var spawn   = RunCommand(`docker exec ${containerId} bash -c ${command}`);
-  // var spawn   = spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   if(spawn.stdout.length){
     // A list of files will be returned in alphanumeric order. This means that the most
@@ -822,14 +797,12 @@ restore_database = function(args){return new Promise((resolve) => {
   command = `aws s3 cp s3://leif-mysql-backups/${fileName} ${fileName}`;
   RunCommandInDockerContainer(containerId, command);
   // RunCommand(`docker exec ${containerId} bash -c ${command}`);
-  // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   // mysql -u root -pfizz -e 'create database lmaoitworks'
   // command = `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`;
   command = `mysql -e 'create database ${dbName}'`;
   RunCommandInDockerContainer(containerId, command);
   // RunCommand(`docker exec ${containerId} bash -c ${command}`);
-  // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -p your_database
   // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -pfizz lmaoitworks
@@ -837,12 +810,10 @@ restore_database = function(args){return new Promise((resolve) => {
   command = `zcat ${fileName} | mysql ${dbName}`;
   RunCommandInDockerContainer(containerId, command);
   // RunCommand(`docker exec ${containerId} bash -c ${command}`);
-  // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   command = `rm ${fileName}`;
   RunCommandInDockerContainer(containerId, command);
   // RunCommand(`docker exec ${containerId} bash -c ${command}`);
-  // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   resolve();
 })}
@@ -869,119 +840,6 @@ help = function(){return new Promise((resolve) => {
 })}
 
 quit = function(){return new Promise((resolve) => {resolve(true);})}
-
-function OLD_STUFF(){
-  wizard_old = function(args){return new Promise((resolve) => {
-    var failed = false;
-    if(!("-r" in args)) {failed = true; console.log("You need to do -a");}
-    if(!("-s" in args)) {failed = true; console.log("You need to do -s");}
-    if(!("-u" in args)) {failed = true; console.log("You need to do -u");}
-    if(!("-d" in args)) {failed = true; console.log("You need to do -d");}
-
-    if("--test" in args){
-      console.log("Testing the function, overriding all arguments");
-      failed = false;
-    }
-
-    if(failed){
-      console.log("Missing mandatory arguments; aborting");
-      resolve();
-      return;
-    }
-
-    var REPO_URL     = args["-r"];
-    var REPO_NAME    = "";
-    var SERVICE_NAME = args["-s"];
-    var URL_DOMAIN   = args["-u"];
-    var DOCKER_STACK = args["-d"];
-
-    if("--test" in args){
-      REPO_URL     = "https://github.com/TundraFizz/Docker-Sample-App/////";
-      while(REPO_URL[REPO_URL.length-1] == "/") REPO_URL = REPO_URL.substring(0, REPO_URL.length-1);
-      REPO_NAME    = REPO_URL.split("/").pop();
-      SERVICE_NAME = "second-service";
-      URL_DOMAIN   = "mudki.ps";
-      DOCKER_STACK = "muh-stack";
-    }
-
-    console.log(`REPO_URL    : ${REPO_URL}`);
-    console.log(`REPO_NAME   : ${REPO_NAME}`);
-    console.log(`SERVICE_NAME: ${SERVICE_NAME}`);
-    console.log(`URL_DOMAIN  : ${URL_DOMAIN}`);
-    console.log(`DOCKER_STACK: ${DOCKER_STACK}`);
-
-    SanityCheck();
-    CloneRepository(REPO_URL);
-    ConfigureSettings(REPO_NAME);
-    BuildDockerImage(SERVICE_NAME, REPO_NAME);
-
-    Nconf(SERVICE_NAME, URL_DOMAIN, "80"); // Sample repository
-    Nconf("phpmyadmin", null, "9000");     // phpMyAdmin
-
-    AddServiceToDockerCompose(SERVICE_NAME);
-    DeployDockerStack(DOCKER_STACK);
-
-    // Wait for the mysql container to start up
-    ConfigureMySqlContainer("root", "fizz");
-
-    // An optional step here is to create or import a database
-
-    console.log("ALL TASKS HAVE BEEN COMPLETED!");
-    resolve();
-
-    // Other stuff
-    // docker service update muh-stack_nginx
-  })}
-
-  z = function(args){return new Promise((resolve) => {
-    var attempts = 1;
-    var mysqlContainerId = null;
-
-    console.log("Getting MySQL container...");
-
-    // Try 60 times (once per second)
-    while(attempts < 60 && !mysqlContainerId){
-      var result = GetDockerContainerIdFromImageName("mysql:");
-
-      // If a valid result was returned, set it to mysqlContainerId
-      if(result != 0){
-        mysqlContainerId = result;
-        break;
-      }
-
-      RunCommand(`sleep 1`);
-    }
-
-    // The MySQL container wasn't found
-    if(!mysqlContainerId){
-      console.log("Couldn't find MySQL container");
-      return;
-    }else
-      console.log("...found!");
-
-    var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
-    var commands    = [
-      `echo '[mysql]'         > /etc/mysql/conf.d/mysql.cnf`, // Create config file
-      `echo 'host=localhost' >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
-      `echo 'user=root'      >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
-      `echo 'password=fizz'  >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
-      `echo ''               >> /etc/mysql/conf.d/mysql.cnf`,
-      `echo '[mysqldump]'    >> /etc/mysql/conf.d/mysql.cnf`,
-      `echo 'user=root'      >> /etc/mysql/conf.d/mysql.cnf`,
-      `echo 'password=fizz'  >> /etc/mysql/conf.d/mysql.cnf`
-    ];
-
-    for(var i = 0; i < commands.length; i++)
-      RunCommandInDockerContainer(mysqlContainerId, commands[i]);
-
-    resolve();
-  })}
-
-  configure_mysql = function(args){return new Promise((resolve) => {
-    ConfigureMySqlContainer("root", "fizz");
-    resolve();
-  })}
-}
 /**************************************************************************************************/
 
 function ParseCommandAndArgs(input){
