@@ -1,0 +1,27 @@
+initialize       [SanityCheck, Nconf, DeployDockerStack, ConfigureMySqlContainer]
+wizard           [SanityCheck, CloneRepository, ConfigureSettings, BuildDockerImage, AddServiceToDockerCompose, Nconf, DeployDockerStack]
+nuke_everything  [N/A]
+view_all         [N/A]
+ssl              [GenerateNginxConfForSSL]
+renew_ssl        TODO
+create_database  [CMD]
+backup_database  [GetDockerContainerIdFromImageName, CMD]
+restore_database [GetDockerContainerIdFromImageName]
+help
+quit
+
+==============================
+CreateBaseDockerCompose
+SanityCheck                 [CreateBaseDockerCompose]
+Nconf
+DeployDockerStack
+ConfigureMySqlContainer     [GetDockerContainerIdFromImageName, CMD]
+CloneRepository
+ConfigureSettings
+BuildDockerImage
+AddServiceToDockerCompose
+----------
+GetDockerContainerIdFromImageName
+RunCommandInDockerContainer
+----------
+GenerateNginxConfForSSL
