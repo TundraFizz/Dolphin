@@ -1,4 +1,3 @@
-initialize       [SanityCheck, Nconf, DeployDockerStack, ConfigureMySqlContainer]
 wizard           [SanityCheck, CloneRepository, ConfigureSettings, BuildDockerImage, AddServiceToDockerCompose, Nconf, DeployDockerStack]
 nuke_everything  [N/A]
 view_all         [N/A]
