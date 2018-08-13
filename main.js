@@ -17,12 +17,20 @@ const SINGLE_FILES_SHA1 = "d254cbb65b7a6a46d96e31ba62a1e8e85124c9ed";
   if(spawn.stderr.length) console.log("ERR:", spawn.stderr.toString("utf-8")); */
 
 var stuff = {
-  "quit": {
-    "helpText": "Quits the program",
+  "initialize": {
+    "helpText": "??????????",
     "commands": null
   },
-  "help": {
-    "helpText": "Displays this screen",
+  "wizard": {
+    "helpText": "??????????",
+    "commands": null
+  },
+  "nuke_everything": {
+    "helpText": "??????????",
+    "commands": null
+  },
+  "view_all": {
+    "helpText": "??????????",
     "commands": null
   },
   "ssl" : {
@@ -50,78 +58,28 @@ var stuff = {
       ]
     }]
   },
-  "nconf": {
-    "helpText": "Generate a basic NGINX config file",
-    "commands": null
-  },
-  "zrenew": {
+  "renew_ssl": {
     "helpText": "Renew SSL certificates",
     "commands": null
   },
-  "newdb": {
-    "helpText": "Creates a new MySQL database from an SQL file",
-    "commands": null
-  },
-  "backup": {
-    "helpText": "Backup the database",
-    "commands": null
-  },
-  "zrestore": {
-    "helpText": "Restore the database from most recent backup",
-    "commands": null
-  },
-  "compose": {
-    "helpText": "Creates a default template Docker compose file",
-    "commands": null
-  },
-
-  "wizard": {
-    "helpText": "??????????",
-    "commands": null
-  },
-
-  "nuke_everything": {
-    "helpText": "??????????",
-    "commands": null
-  },
-
-  "view_all": {
-    "helpText": "??????????",
-    "commands": null
-  },
-
   "create_database": {
     "helpText": "??????????",
     "commands": null
   },
-
   "backup_database": {
     "helpText": "??????????",
     "commands": null
   },
-
   "restore_database": {
     "helpText": "??????????",
     "commands": null
   },
-
-  "configure_mysql": {
-    "helpText": "??????????",
+  "help": {
+    "helpText": "Displays this screen",
     "commands": null
   },
-
-  "testing_thing": {
-    "helpText": "??????????",
-    "commands": null
-  },
-
-  "initialize": {
-    "helpText": "??????????",
-    "commands": null
-  },
-
-  "z": {
-    "helpText": "??????????",
+  "quit": {
+    "helpText": "Quits the program",
     "commands": null
   }
 };
@@ -266,31 +224,6 @@ function SanityCheck(){
   console.log("Complete!");
 }
 
-function CloneRepository(REPO_URL){
-  console.log("Cloning repository:", REPO_URL);
-  var spawn = spawnSync("git", ["clone", REPO_URL]);
-  console.log("Complete!");
-}
-
-function ConfigureSettings(REPO_NAME){
-  // If there's a config.yml file for this repository, edit it
-  var possiblePath = `${REPO_NAME}/config.yml`;
-
-  if(!fs.existsSync(possiblePath))
-    return;
-
-  console.log("Configuring settings:", REPO_NAME);
-  var spawn = spawnSync("nano", [possiblePath], {"stdio": "inherit", "detached": true});
-  console.log("Complete!");
-}
-
-function BuildDockerImage(SERVICE_NAME, REPO_NAME){
-  console.log("Building Docker image:", REPO_NAME);
-  console.log("         into service:", SERVICE_NAME);
-  var spawn = spawnSync("docker", ["build", "-t", SERVICE_NAME, REPO_NAME]);
-  console.log("Complete!");
-}
-
 function Nconf(serviceName, urlDomain, port){
   console.log("Creating basic NGINX config file:", serviceName);
 
@@ -332,58 +265,10 @@ function Nconf(serviceName, urlDomain, port){
   console.log("Complete!");
 }
 
-function AddServiceToDockerCompose(SERVICE_NAME){
-  console.log("Testing...");
-
-  var doc = yaml.safeLoad(fs.readFileSync("docker-compose.yml", "utf-8"));
-
-  // Create a new object for the services key
-  var newService = {
-    "image": SERVICE_NAME,
-    "volumes": ["./logs:/usr/src/app/log"],
-    "depends_on": ["mysql"]
-  };
-
-  doc["services"][SERVICE_NAME] = newService;
-  fs.writeFileSync("docker-compose.yml", yaml.safeDump(doc), "utf-8");
-  console.log("Complete!");
-}
-
 function DeployDockerStack(DOCKER_STACK){
   console.log("Deploying to stack:", DOCKER_STACK);
   var spawn = spawnSync("docker", ["stack", "deploy", "-c", "docker-compose.yml", DOCKER_STACK]);
   console.log("Complete!");
-}
-
-function GetDockerContainerIdFromImageName(name){
-  // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
-  var spawn  = spawnSync("docker", ["container", "ls"]);
-  var output = spawn.stdout.toString("utf-8").trim().split("\n");
-  var containers = [];
-
-  // Search through all containers
-  for(var i = 0; i < output.length; i++){
-    // Remove all duplicate spaces, because otherwise the .split function below won't work
-    // Matches a "space" character (match 1 or more of the preceding token)
-    var line = output[i].replace(/ +/g, " ");
-
-    // There are seven attributes for each container delimited by spaces:
-    // Container ID, Image, Command, Created, Status, Ports, Names
-    // I only care about the Container ID and Image, so extract those
-    var containerId = line.split(" ")[0];
-    var imageName   = line.split(" ")[1];
-
-    // If imageName contains the name I'm looking for, save the containerId
-    if(imageName.indexOf(name) > -1) containers.push(containerId);
-  }
-
-  // There must be exactly one ID in containers, otherwise it's an error
-  if     (containers.length == 0) console.log("Error: Couldn't find container");
-  else if(containers.length  > 1) console.log("Error: Ambiguous container");
-  else                            return containers[0];
-
-  // Return 0 to signify an error
-  return 0;
 }
 
 function ConfigureMySqlContainer(dbUsername, dbPassword){
@@ -438,6 +323,79 @@ function ConfigureMySqlContainer(dbUsername, dbPassword){
     RunCommandInDockerContainer(mysqlContainerId, commands[i]);
 }
 
+function CloneRepository(REPO_URL){
+  console.log("Cloning repository:", REPO_URL);
+  var spawn = spawnSync("git", ["clone", REPO_URL]);
+  console.log("Complete!");
+}
+
+function ConfigureSettings(REPO_NAME){
+  // If there's a config.yml file for this repository, edit it
+  var possiblePath = `${REPO_NAME}/config.yml`;
+
+  if(!fs.existsSync(possiblePath))
+    return;
+
+  console.log("Configuring settings:", REPO_NAME);
+  var spawn = spawnSync("nano", [possiblePath], {"stdio": "inherit", "detached": true});
+  console.log("Complete!");
+}
+
+function BuildDockerImage(SERVICE_NAME, REPO_NAME){
+  console.log("Building Docker image:", REPO_NAME);
+  console.log("         into service:", SERVICE_NAME);
+  var spawn = spawnSync("docker", ["build", "-t", SERVICE_NAME, REPO_NAME]);
+  console.log("Complete!");
+}
+
+function AddServiceToDockerCompose(SERVICE_NAME){
+  console.log("Testing...");
+
+  var doc = yaml.safeLoad(fs.readFileSync("docker-compose.yml", "utf-8"));
+
+  // Create a new object for the services key
+  var newService = {
+    "image": SERVICE_NAME,
+    "volumes": ["./logs:/usr/src/app/log"],
+    "depends_on": ["mysql"]
+  };
+
+  doc["services"][SERVICE_NAME] = newService;
+  fs.writeFileSync("docker-compose.yml", yaml.safeDump(doc), "utf-8");
+  console.log("Complete!");
+}
+
+function GetDockerContainerIdFromImageName(name){
+  // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
+  var spawn  = spawnSync("docker", ["container", "ls"]);
+  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var containers = [];
+
+  // Search through all containers
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // There are seven attributes for each container delimited by spaces:
+    // Container ID, Image, Command, Created, Status, Ports, Names
+    // I only care about the Container ID and Image, so extract those
+    var containerId = line.split(" ")[0];
+    var imageName   = line.split(" ")[1];
+
+    // If imageName contains the name I'm looking for, save the containerId
+    if(imageName.indexOf(name) > -1) containers.push(containerId);
+  }
+
+  // There must be exactly one ID in containers, otherwise it's an error
+  if     (containers.length == 0) console.log("Error: Couldn't find container");
+  else if(containers.length  > 1) console.log("Error: Ambiguous container");
+  else                            return containers[0];
+
+  // Return 0 to signify an error
+  return 0;
+}
+
 function RunCommandInDockerContainer(container, command){
   var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
 
@@ -453,32 +411,63 @@ function RunCommandInDockerContainer(container, command){
     console.log(spawn.stderr.toString("utf-8").trim());
   }
 }
+
+function GenerateNginxConfForSSL(serviceName, urlDomain){
+  var lines = [
+    `upstream ${serviceName} {`                                                                                          ,
+    `  server ${serviceName};`                                                                                           ,
+    `}`                                                                                                                  ,
+    ``                                                                                                                   ,
+    `server {`                                                                                                           ,
+    `  listen 80;`                                                                                                       ,
+    `  server_name ${urlDomain} www.${urlDomain};`                                                                       ,
+    ``                                                                                                                   ,
+    `  location / {`                                                                                                     ,
+    `    return 301 https://${urlDomain}$request_uri;`                                                                   ,
+    `  }`                                                                                                                ,
+    ``                                                                                                                   ,
+    `  location /.well-known/acme-challenge/ {`                                                                          ,
+    `    alias /ssl_challenge/.well-known/acme-challenge/;`                                                              ,
+    `  }`                                                                                                                ,
+    `}`                                                                                                                  ,
+    ``                                                                                                                   ,
+    `server {`                                                                                                           ,
+    `  listen 443 ssl;`                                                                                                  ,
+    `  server_name ${urlDomain} www.${urlDomain};`                                                                       ,
+    `  ssl_certificate     /ssl/live/${urlDomain}/fullchain.pem;`                                                        ,
+    `  ssl_certificate_key /ssl/live/${urlDomain}/privkey.pem;`                                                          ,
+    ``                                                                                                                   ,
+    `  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;`                                                                             ,
+    `  ssl_prefer_server_ciphers on;`                                                                                    ,
+    `  ssl_ciphers "ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS";`,
+    `  ssl_ecdh_curve secp384r1;`                                                                                        ,
+    `  ssl_session_cache shared:SSL:10m;`                                                                                ,
+    `  ssl_session_tickets off;`                                                                                         ,
+    `  ssl_stapling on;`                                                                                                 ,
+    `  ssl_stapling_verify on;`                                                                                          ,
+    `  resolver 8.8.8.8 8.8.4.4 valid=300s;`                                                                             ,
+    `  resolver_timeout 5s;`                                                                                             ,
+    `  add_header Strict-Transport-Security "max-age=63072000; includeSubdomains";`                                      ,
+    `  add_header X-Frame-Options DENY;`                                                                                 ,
+    `  add_header X-Content-Type-Options nosniff;`                                                                       ,
+    ``                                                                                                                   ,
+    `  ssl_dhparam /dhparam.pem;`                                                                                        ,
+    ``                                                                                                                   ,
+    `  location / {proxy_pass http://${serviceName};}`                                                                  ,
+    `}`
+  ];
+
+  var fileName = `nginx_conf.d/${serviceName}.conf`;
+
+  if(fs.existsSync(fileName))
+    fs.unlinkSync(fileName);
+
+  for(var i = 0; i < lines.length; i++)
+    fs.appendFileSync(fileName, lines[i] + "\n");
+}
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
-quit = function(){return new Promise((resolve) => {resolve(true);})}
-
-help = function(){return new Promise((resolve) => {
-  console.log();
-  maxLength = 0;
-  for(var key in stuff)
-    if(maxLength < key.length)
-      maxLength = key.length;
-
-  for(var key in stuff){
-    var helpText = stuff[key]["helpText"];
-    var extraSpaces = maxLength - key.length;
-    var line = key;
-    for(var i = 0; i < extraSpaces; i++)
-      line += " ";
-    line += ` ${helpText}`;
-    console.log(line);
-  }
-
-  console.log();
-  resolve();
-})}
-
 initialize = function(args){return new Promise((resolve) => {
   if(fs.existsSync("docker-compose.yml")){
     console.log("It looks like a Docker system has already been initialized");
@@ -500,114 +489,13 @@ initialize = function(args){return new Promise((resolve) => {
 })};
 
 wizard = function(args){return new Promise((resolve) => {
-  var failed = false;
-  if(!("-r" in args)) {failed = true; console.log("You need to do -a");}
-  if(!("-s" in args)) {failed = true; console.log("You need to do -s");}
-  if(!("-u" in args)) {failed = true; console.log("You need to do -u");}
-  if(!("-d" in args)) {failed = true; console.log("You need to do -d");}
-
-  if("--test" in args){
-    console.log("Testing the function, overriding all arguments");
-    failed = false;
-  }
-
-  if(failed){
-    console.log("Missing mandatory arguments; aborting");
-    resolve();
-    return;
-  }
-
-  var REPO_URL     = args["-r"];
-  var REPO_NAME    = "";
-  var SERVICE_NAME = args["-s"];
-  var URL_DOMAIN   = args["-u"];
-  var DOCKER_STACK = args["-d"];
-
-  if("--test" in args){
-    REPO_URL     = "https://github.com/TundraFizz/Docker-Sample-App/////";
-    while(REPO_URL[REPO_URL.length-1] == "/") REPO_URL = REPO_URL.substring(0, REPO_URL.length-1);
-    REPO_NAME    = REPO_URL.split("/").pop();
-    SERVICE_NAME = "second-service";
-    URL_DOMAIN   = "mudki.ps";
-    DOCKER_STACK = "muh-stack";
-  }
-
-  console.log(`REPO_URL    : ${REPO_URL}`);
-  console.log(`REPO_NAME   : ${REPO_NAME}`);
-  console.log(`SERVICE_NAME: ${SERVICE_NAME}`);
-  console.log(`URL_DOMAIN  : ${URL_DOMAIN}`);
-  console.log(`DOCKER_STACK: ${DOCKER_STACK}`);
-
   SanityCheck();
-  CloneRepository(REPO_URL);
-  ConfigureSettings(REPO_NAME);
-  BuildDockerImage(SERVICE_NAME, REPO_NAME);
-
-  Nconf(SERVICE_NAME, URL_DOMAIN, "80"); // Sample repository
-  Nconf("phpmyadmin", null, "9000");     // phpMyAdmin
-
-  AddServiceToDockerCompose(SERVICE_NAME);
-  DeployDockerStack(DOCKER_STACK);
-
-  // Wait for the mysql container to start up
-  ConfigureMySqlContainer("root", "fizz");
-
-  // An optional step here is to create or import a database
-
-  console.log("ALL TASKS HAVE BEEN COMPLETED!");
-  resolve();
-
-  // Other stuff
-  // docker service update muh-stack_nginx
-})}
-
-configure_mysql = function(args){return new Promise((resolve) => {
-  ConfigureMySqlContainer("root", "fizz");
-  resolve();
-})}
-
-z = function(args){return new Promise((resolve) => {
-  var attempts = 1;
-  var mysqlContainerId = null;
-
-  console.log("Getting MySQL container...");
-
-  // Try 60 times (once per second)
-  while(attempts < 60 && !mysqlContainerId){
-    var result = GetDockerContainerIdFromImageName("mysql:");
-
-    // If a valid result was returned, set it to mysqlContainerId
-    if(result != 0){
-      mysqlContainerId = result;
-      break;
-    }
-
-    spawnSync("sleep", ["1"]);
-  }
-
-  // The MySQL container wasn't found
-  if(!mysqlContainerId){
-    console.log("Couldn't find MySQL container");
-    return;
-  }else
-    console.log("...found!");
-
-  var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
-  var commands    = [
-    `echo '[mysql]'         > /etc/mysql/conf.d/mysql.cnf`, // Create config file
-    `echo 'host=localhost' >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
-    `echo 'user=root'      >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
-    `echo 'password=fizz'  >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
-    `echo ''               >> /etc/mysql/conf.d/mysql.cnf`,
-    `echo '[mysqldump]'    >> /etc/mysql/conf.d/mysql.cnf`,
-    `echo 'user=root'      >> /etc/mysql/conf.d/mysql.cnf`,
-    `echo 'password=fizz'  >> /etc/mysql/conf.d/mysql.cnf`
-  ];
-
-  for(var i = 0; i < commands.length; i++)
-    RunCommandInDockerContainer(mysqlContainerId, commands[i]);
-
-  resolve();
+  CloneRepository();
+  ConfigureSettings();
+  BuildDockerImage();
+  AddServiceToDockerCompose();
+  Nconf();
+  DeployDockerStack();
 })}
 
 nuke_everything = function(args){return new Promise((resolve) => {
@@ -698,59 +586,28 @@ nuke_everything = function(args){return new Promise((resolve) => {
   resolve();
 })}
 
-function GenerateNginxConfForSSL(serviceName, urlDomain){
-  var lines = [
-    `upstream ${serviceName} {`                                                                                          ,
-    `  server ${serviceName};`                                                                                           ,
-    `}`                                                                                                                  ,
-    ``                                                                                                                   ,
-    `server {`                                                                                                           ,
-    `  listen 80;`                                                                                                       ,
-    `  server_name ${urlDomain} www.${urlDomain};`                                                                       ,
-    ``                                                                                                                   ,
-    `  location / {`                                                                                                     ,
-    `    return 301 https://${urlDomain}$request_uri;`                                                                   ,
-    `  }`                                                                                                                ,
-    ``                                                                                                                   ,
-    `  location /.well-known/acme-challenge/ {`                                                                          ,
-    `    alias /ssl_challenge/.well-known/acme-challenge/;`                                                              ,
-    `  }`                                                                                                                ,
-    `}`                                                                                                                  ,
-    ``                                                                                                                   ,
-    `server {`                                                                                                           ,
-    `  listen 443 ssl;`                                                                                                  ,
-    `  server_name ${urlDomain} www.${urlDomain};`                                                                       ,
-    `  ssl_certificate     /ssl/live/${urlDomain}/fullchain.pem;`                                                        ,
-    `  ssl_certificate_key /ssl/live/${urlDomain}/privkey.pem;`                                                          ,
-    ``                                                                                                                   ,
-    `  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;`                                                                             ,
-    `  ssl_prefer_server_ciphers on;`                                                                                    ,
-    `  ssl_ciphers "ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS";`,
-    `  ssl_ecdh_curve secp384r1;`                                                                                        ,
-    `  ssl_session_cache shared:SSL:10m;`                                                                                ,
-    `  ssl_session_tickets off;`                                                                                         ,
-    `  ssl_stapling on;`                                                                                                 ,
-    `  ssl_stapling_verify on;`                                                                                          ,
-    `  resolver 8.8.8.8 8.8.4.4 valid=300s;`                                                                             ,
-    `  resolver_timeout 5s;`                                                                                             ,
-    `  add_header Strict-Transport-Security "max-age=63072000; includeSubdomains";`                                      ,
-    `  add_header X-Frame-Options DENY;`                                                                                 ,
-    `  add_header X-Content-Type-Options nosniff;`                                                                       ,
-    ``                                                                                                                   ,
-    `  ssl_dhparam /dhparam.pem;`                                                                                        ,
-    ``                                                                                                                   ,
-    `  location / {proxy_pass http://${serviceName};}`                                                                  ,
-    `}`
-  ];
+view_all = function(args){return new Promise((resolve) => {
+  var spawn;
 
-  var fileName = `nginx_conf.d/${serviceName}.conf`;
+  spawnSync("clear");
 
-  if(fs.existsSync(fileName))
-    fs.unlinkSync(fileName);
+  spawn = spawnSync("docker", ["stack", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
-  for(var i = 0; i < lines.length; i++)
-    fs.appendFileSync(fileName, lines[i] + "\n");
-}
+  spawn = spawnSync("docker", ["service", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["container", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["image", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  spawn = spawnSync("docker", ["volume", "ls"]);
+  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+
+  resolve();
+})}
 
 ssl = function(args){return new Promise((resolve) => {
 
@@ -822,29 +679,6 @@ ssl = function(args){return new Promise((resolve) => {
 
   // Reload the Nginx config files inside of the Nginx container
   spawn = spawnSync("docker", ["exec", "-i", nginxContainerId, "nginx", "-s", "reload"]);
-
-  resolve();
-})}
-
-view_all = function(args){return new Promise((resolve) => {
-  var spawn;
-
-  spawnSync("clear");
-
-  spawn = spawnSync("docker", ["stack", "ls"]);
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
-
-  spawn = spawnSync("docker", ["service", "ls"]);
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
-
-  spawn = spawnSync("docker", ["container", "ls"]);
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
-
-  spawn = spawnSync("docker", ["image", "ls"]);
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
-
-  spawn = spawnSync("docker", ["volume", "ls"]);
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
   resolve();
 })}
@@ -962,10 +796,141 @@ restore_database = function(args){return new Promise((resolve) => {
   resolve();
 })}
 
-testing_thing = function(args){return new Promise((resolve) => {
-  GetDockerContainerIdFromImageName("mysql");
+help = function(){return new Promise((resolve) => {
+  console.log();
+  maxLength = 0;
+  for(var key in stuff)
+    if(maxLength < key.length)
+      maxLength = key.length;
+
+  for(var key in stuff){
+    var helpText = stuff[key]["helpText"];
+    var extraSpaces = maxLength - key.length;
+    var line = key;
+    for(var i = 0; i < extraSpaces; i++)
+      line += " ";
+    line += ` ${helpText}`;
+    console.log(line);
+  }
+
+  console.log();
   resolve();
 })}
+
+quit = function(){return new Promise((resolve) => {resolve(true);})}
+
+function OLD_STUFF(){
+  wizard_old = function(args){return new Promise((resolve) => {
+    var failed = false;
+    if(!("-r" in args)) {failed = true; console.log("You need to do -a");}
+    if(!("-s" in args)) {failed = true; console.log("You need to do -s");}
+    if(!("-u" in args)) {failed = true; console.log("You need to do -u");}
+    if(!("-d" in args)) {failed = true; console.log("You need to do -d");}
+
+    if("--test" in args){
+      console.log("Testing the function, overriding all arguments");
+      failed = false;
+    }
+
+    if(failed){
+      console.log("Missing mandatory arguments; aborting");
+      resolve();
+      return;
+    }
+
+    var REPO_URL     = args["-r"];
+    var REPO_NAME    = "";
+    var SERVICE_NAME = args["-s"];
+    var URL_DOMAIN   = args["-u"];
+    var DOCKER_STACK = args["-d"];
+
+    if("--test" in args){
+      REPO_URL     = "https://github.com/TundraFizz/Docker-Sample-App/////";
+      while(REPO_URL[REPO_URL.length-1] == "/") REPO_URL = REPO_URL.substring(0, REPO_URL.length-1);
+      REPO_NAME    = REPO_URL.split("/").pop();
+      SERVICE_NAME = "second-service";
+      URL_DOMAIN   = "mudki.ps";
+      DOCKER_STACK = "muh-stack";
+    }
+
+    console.log(`REPO_URL    : ${REPO_URL}`);
+    console.log(`REPO_NAME   : ${REPO_NAME}`);
+    console.log(`SERVICE_NAME: ${SERVICE_NAME}`);
+    console.log(`URL_DOMAIN  : ${URL_DOMAIN}`);
+    console.log(`DOCKER_STACK: ${DOCKER_STACK}`);
+
+    SanityCheck();
+    CloneRepository(REPO_URL);
+    ConfigureSettings(REPO_NAME);
+    BuildDockerImage(SERVICE_NAME, REPO_NAME);
+
+    Nconf(SERVICE_NAME, URL_DOMAIN, "80"); // Sample repository
+    Nconf("phpmyadmin", null, "9000");     // phpMyAdmin
+
+    AddServiceToDockerCompose(SERVICE_NAME);
+    DeployDockerStack(DOCKER_STACK);
+
+    // Wait for the mysql container to start up
+    ConfigureMySqlContainer("root", "fizz");
+
+    // An optional step here is to create or import a database
+
+    console.log("ALL TASKS HAVE BEEN COMPLETED!");
+    resolve();
+
+    // Other stuff
+    // docker service update muh-stack_nginx
+  })}
+
+  z = function(args){return new Promise((resolve) => {
+    var attempts = 1;
+    var mysqlContainerId = null;
+
+    console.log("Getting MySQL container...");
+
+    // Try 60 times (once per second)
+    while(attempts < 60 && !mysqlContainerId){
+      var result = GetDockerContainerIdFromImageName("mysql:");
+
+      // If a valid result was returned, set it to mysqlContainerId
+      if(result != 0){
+        mysqlContainerId = result;
+        break;
+      }
+
+      spawnSync("sleep", ["1"]);
+    }
+
+    // The MySQL container wasn't found
+    if(!mysqlContainerId){
+      console.log("Couldn't find MySQL container");
+      return;
+    }else
+      console.log("...found!");
+
+    var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
+    var commands    = [
+      `echo '[mysql]'         > /etc/mysql/conf.d/mysql.cnf`, // Create config file
+      `echo 'host=localhost' >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
+      `echo 'user=root'      >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
+      `echo 'password=fizz'  >> /etc/mysql/conf.d/mysql.cnf`, // Append to the config file
+      `echo ''               >> /etc/mysql/conf.d/mysql.cnf`,
+      `echo '[mysqldump]'    >> /etc/mysql/conf.d/mysql.cnf`,
+      `echo 'user=root'      >> /etc/mysql/conf.d/mysql.cnf`,
+      `echo 'password=fizz'  >> /etc/mysql/conf.d/mysql.cnf`
+    ];
+
+    for(var i = 0; i < commands.length; i++)
+      RunCommandInDockerContainer(mysqlContainerId, commands[i]);
+
+    resolve();
+  })}
+
+  configure_mysql = function(args){return new Promise((resolve) => {
+    ConfigureMySqlContainer("root", "fizz");
+    resolve();
+  })}
+}
 /**************************************************************************************************/
 
 function ParseCommandAndArgs(input){
