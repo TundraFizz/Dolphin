@@ -2,8 +2,8 @@ var fs          = require("fs");
 var yaml        = require("./yaml");
 var readline    = require("readline");
 var {spawnSync} = require("child_process");
-const SINGLE_FILES_SHA1   = "d254cbb65b7a6a46d96e31ba62a1e8e85124c9ed";
-const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/a.tar.gz";
+const SINGLE_FILES_SHA1   = "29250719919A85B1D082C414FB47FD750AC5C9F9";
+const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/temp.tar.gz";
 
 /* Commands are an array of objects [
   usage     : STRING,
@@ -77,6 +77,14 @@ var stuff = {
   },
   "quit": {
     "helpText": "Quits the program",
+    "commands": null
+  },
+  "remove_service": {
+    "helpText": "Removes a service",
+    "commands": null
+  },
+  "z": {
+    "helpText": "??????????",
     "commands": null
   }
 };
@@ -178,6 +186,68 @@ function GetDockerContainerIdFromImageName(name){
   return 0;
 }
 
+function GetDockerServiceIdFromImageName(name){
+  // Get the output of all containers (docker service ls), trim the string (remove spaces/newlines from ends), and split it by newline
+  var spawn  = RunCommand("docker service ls");
+  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var containers = [];
+
+  // Search through all containers
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // There are six attributes for each service delimited by spaces:
+    // Service ID, Name, Mode, Replicas, Image, Ports
+    // I only care about the Container ID and Image, so extract those
+    var serviceId = line.split(" ")[0];
+    var imageName = line.split(" ")[4];
+
+    // If imageName contains the name I'm looking for, save the serviceId
+    if(imageName.indexOf(name) > -1) containers.push(serviceId);
+  }
+
+  // There must be exactly one ID in containers, otherwise it's an error
+  if     (containers.length == 0) console.log("Error: Couldn't find service");
+  else if(containers.length  > 1) console.log("Error: Ambiguous service");
+  else                            return containers[0];
+
+  // Return 0 to signify an error
+  return 0;
+}
+
+function GetDockerImageIdFromImageName(name){
+  // Get the output of all containers (docker image ls), trim the string (remove spaces/newlines from ends), and split it by newline
+  var spawn  = RunCommand("docker image ls");
+  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var containers = [];
+
+  // Search through all containers
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // There are five attributes for each image delimited by spaces:
+    // Repository, Tag, Image ID, Created, Size
+    // I only care about the Image ID and Repository, so extract those
+    var imageId    = line.split(" ")[2];
+    var repository = line.split(" ")[0];
+
+    // If repository contains the name I'm looking for, save the imageId
+    if(repository.indexOf(name) > -1) containers.push(imageId);
+  }
+
+  // There must be exactly one ID in containers, otherwise it's an error
+  if     (containers.length == 0) console.log("Error: Couldn't find image");
+  else if(containers.length  > 1) console.log("Error: Ambiguous image");
+  else                            return containers[0];
+
+  // Return 0 to signify an error
+  return 0;
+}
+
 function CreateBaseDockerCompose(){
   console.log("Creating base Docker compose file");
 
@@ -211,7 +281,10 @@ function CreateBaseDockerCompose(){
       },
       "mysql": {
         "image": "mysql",
-        "volumes": ["sql_storage:/var/lib/mysql"],
+        "volumes": [
+          "./single_files/mysql.cnf:/etc/mysql/conf.d/",
+          "sql_storage:/var/lib/mysql"
+        ],
         "environment": {
           "MYSQL_ROOT_PASSWORD": "fizz"
         },
@@ -339,7 +412,7 @@ function ConfigureMySqlContainer(dbUsername, dbPassword){
 
   // Try 60 times (once per second)
   while(attempts < 60 && !mysqlContainerId){
-    var result = GetDockerContainerIdFromImageName("mysql:");
+    var result = GetDockerContainerIdFromImageName("mysql");
 
     // If a valid result was returned, set it to mysqlContainerId
     if(result != 0){
@@ -358,23 +431,23 @@ function ConfigureMySqlContainer(dbUsername, dbPassword){
     console.log("...found!");
 
   var mySqlConfig = "/etc/mysql/conf.d/mysql.cnf";
-  var host        = "localhost";
-  var user        = "root";
-  var password    = "fizz";
+  var host        = "localhost";                       // NOT CURRENTLY USED!
+  var user        = "root";                            // NOT CURRENTLY USED!
+  var password    = "fizz";                            // NOT CURRENTLY USED!
   var commands    = [
     `apt-get -qq update`,                              // Update the system
     `apt-get -qq install -y apt-utils`,                // Install apt-utils
     `apt-get -qq install -y python-pip`,               // Install the Python package manager
-    `pip install -q awscli`,                           // Install the AWS Command-line Interface
+    `pip install -q awscli`                            // Install the AWS Command-line Interface
 
-    `echo '[mysql]'               > ${mySqlConfig}`, // Create config file
-    `echo 'host=${host}'         >> ${mySqlConfig}`, // Append to the config file
-    `echo 'user=${user}'         >> ${mySqlConfig}`,
-    `echo 'password=${password}' >> ${mySqlConfig}`,
-    `echo ''                     >> ${mySqlConfig}`,
-    `echo '[mysqldump]'          >> ${mySqlConfig}`,
-    `echo 'user=${user}'         >> ${mySqlConfig}`,
-    `echo 'password=${password}' >> ${mySqlConfig}`
+    // `echo '[mysql]'               > ${mySqlConfig}`, // Create config file
+    // `echo 'host=${host}'         >> ${mySqlConfig}`, // Append to the config file
+    // `echo 'user=${user}'         >> ${mySqlConfig}`,
+    // `echo 'password=${password}' >> ${mySqlConfig}`,
+    // `echo ''                     >> ${mySqlConfig}`,
+    // `echo '[mysqldump]'          >> ${mySqlConfig}`,
+    // `echo 'user=${user}'         >> ${mySqlConfig}`,
+    // `echo 'password=${password}' >> ${mySqlConfig}`
   ];
 
   // --no-install-recommends apt-utils
@@ -481,6 +554,72 @@ function GenerateNginxConfForSSL(serviceName, urlDomain){
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
+z = function(args){return new Promise((resolve) => {
+  var dockerStackName = "muh-stack";
+  var repoUrl     = "git@github.com:TundraFizz/Coss-Stats.git";
+  var repoName    = "Coss-Stats";
+  var serviceName = "coss-stats";
+  var urlDomain   = "coss-stats.io";
+  var port        = "80";
+
+  // var dockerStackName = "muh-stack";
+  // var repoUrl     = "https://github.com/TundraFizz/Docker-Sample-App";
+  // var repoName    = "Docker-Sample-App";
+  // var serviceName = "docker-sample-app";
+  // var urlDomain   = "mudki.ps";
+  // var port        = "80";
+
+  console.log("==================================================");
+  console.log(`dockerStackName | ${dockerStackName}`);
+  console.log(`repoUrl         | ${repoUrl}`);
+  console.log(`repoName        | ${repoName}`);
+  console.log(`serviceName     | ${serviceName}`);
+  console.log(`urlDomain       | ${urlDomain}`);
+  console.log("==================================================");
+  console.log();
+
+  CloneRepository(repoUrl);
+  ConfigureSettings(repoName);
+  BuildDockerImage(serviceName, repoName);
+  AddServiceToDockerCompose(serviceName);
+  Nconf(serviceName, urlDomain, "80");
+  DeployDockerStack(dockerStackName);
+
+  // RESTART THE NGINX CONTAINER
+  var container = GetDockerContainerIdFromImageName("nginx");
+  RunCommand(`docker container restart ${container}`);
+
+  resolve();
+})}
+
+remove_service = function(args){return new Promise((resolve) => {
+  if(!("-r" in args)){
+    console.log("Repository name isn't given");
+    resolve();return;
+  }
+
+  var repoName    = args["-r"];
+  var serviceName = repoName.toLowerCase();
+  var serviceId   = GetDockerServiceIdFromImageName(serviceName);
+  var imageId     = GetDockerImageIdFromImageName  (serviceName);
+
+  console.log("==================================================");
+  console.log(`repoName    | ${repoName}`);
+  console.log(`serviceName | ${serviceName}`);
+  console.log(`serviceId   | ${serviceId}`);
+  console.log(`imageId     | ${imageId}`);
+  console.log("==================================================");
+  console.log();
+
+  RunCommand(`docker service rm ${serviceId}`);
+  RunCommand(`docker image rm ${imageId}`);
+  RunCommand(`rm -rf ${repoName}`);
+  RunCommand(`rm nginx_conf.d/${serviceName}.conf`);
+  // Edit the file docker-compose.yml
+
+  resolve();
+})}
+
 wizard = function(args){return new Promise((resolve) => {
 
   // wizard -r https://github.com/TundraFizz/Docker-Sample-App -u mudki.ps
@@ -500,7 +639,7 @@ wizard = function(args){return new Promise((resolve) => {
     DeployDockerStack(dockerStackName);
     ConfigureMySqlContainer("root", "fizz");
 
-    if("--initialize" in args){
+    if("--init" in args){
       console.log("ONLY initialize this");
       resolve();return;
     }
@@ -668,7 +807,7 @@ ssl = function(args){return new Promise((resolve) => {
 
   // Search for the Nginx container
   for(var i = 0; i < output.length; i++){
-    if(output[i].indexOf("nginx:") > -1){
+    if(output[i].indexOf("nginx") > -1){
       output = output[i];
       foundNginx = true;
       break;
@@ -942,3 +1081,6 @@ Main();
 /***** TODO *****/
 // Display text on what happens
 // Handle errors
+
+// Create a zipped archive
+// tar -zcf temp.tar.gz single_files
