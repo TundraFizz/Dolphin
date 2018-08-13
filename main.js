@@ -117,7 +117,7 @@ function Help(command){
   }
 }
 
-/**************************************** HELPER FUNCTIONS ****************************************/
+/**************************************** UTILITY FUNCTIONS ***************************************/
 function RunCommand(command){
   var array = command.split(" ");
   var cmd   = array[0];
@@ -127,6 +127,57 @@ function RunCommand(command){
     args.push(array[i]);
 
   return spawnSync(cmd, args);
+}
+
+function RunCommandInDockerContainer(container, command){
+  var spawn = RunCommand(`docker exec ${container} bash -c ${command}`);
+  // var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
+
+  console.log(">>>", command);
+
+  if(spawn.stdout.length){
+    console.log("===== OUT ==============================");
+    console.log(spawn.stdout.toString("utf-8").trim());
+  }
+
+  if(spawn.stderr.length){
+    console.log("===== ERR ==============================");
+    console.log(spawn.stderr.toString("utf-8").trim());
+  }
+
+  return spawn;
+}
+
+function GetDockerContainerIdFromImageName(name){
+  // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
+  var spawn  = RunCommand("docker container ls");
+  // var spawn  = spawnSync("docker", ["container", "ls"]);
+  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var containers = [];
+
+  // Search through all containers
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // There are seven attributes for each container delimited by spaces:
+    // Container ID, Image, Command, Created, Status, Ports, Names
+    // I only care about the Container ID and Image, so extract those
+    var containerId = line.split(" ")[0];
+    var imageName   = line.split(" ")[1];
+
+    // If imageName contains the name I'm looking for, save the containerId
+    if(imageName.indexOf(name) > -1) containers.push(containerId);
+  }
+
+  // There must be exactly one ID in containers, otherwise it's an error
+  if     (containers.length == 0) console.log("Error: Couldn't find container");
+  else if(containers.length  > 1) console.log("Error: Ambiguous container");
+  else                            return containers[0];
+
+  // Return 0 to signify an error
+  return 0;
 }
 
 function CreateBaseDockerCompose(){
@@ -192,7 +243,9 @@ function CreateBaseDockerCompose(){
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(dockerCompose), "utf-8");
   console.log("Complete!");
 }
+/**************************************************************************************************/
 
+/**************************************** HELPER FUNCTIONS ****************************************/
 function Initialize(dockerStackName){
   if(fs.existsSync("docker-compose.yml"))
     return;
@@ -231,10 +284,6 @@ function Initialize(dockerStackName){
   }else{
     console.log("Checksum not found");
   }
-
-  Nconf("phpmyadmin", null, "9000");
-  DeployDockerStack(dockerStackName);
-  ConfigureMySqlContainer("root", "fizz");
 }
 
 function Nconf(serviceName, urlDomain, port){
@@ -279,10 +328,9 @@ function Nconf(serviceName, urlDomain, port){
   console.log("Complete!");
 }
 
-function DeployDockerStack(DOCKER_STACK){
-  console.log("Deploying to stack:", DOCKER_STACK);
-  var spawn = RunCommand(`docker stack deploy -c docker-compose.yml ${DOCKER_STACK}`);
-  // var spawn = spawnSync("docker", ["stack", "deploy", "-c", "docker-compose.yml", DOCKER_STACK]);
+function DeployDockerStack(dockerStack){
+  console.log("Deploying to stack:", dockerStack);
+  var spawn = RunCommand(`docker stack deploy -c docker-compose.yml ${dockerStack}`);
   console.log("Complete!");
 }
 
@@ -381,55 +429,6 @@ function AddServiceToDockerCompose(serviceName){
   console.log("Complete!");
 }
 
-function GetDockerContainerIdFromImageName(name){
-  // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
-  var spawn  = RunCommand("docker container ls");
-  // var spawn  = spawnSync("docker", ["container", "ls"]);
-  var output = spawn.stdout.toString("utf-8").trim().split("\n");
-  var containers = [];
-
-  // Search through all containers
-  for(var i = 0; i < output.length; i++){
-    // Remove all duplicate spaces, because otherwise the .split function below won't work
-    // Matches a "space" character (match 1 or more of the preceding token)
-    var line = output[i].replace(/ +/g, " ");
-
-    // There are seven attributes for each container delimited by spaces:
-    // Container ID, Image, Command, Created, Status, Ports, Names
-    // I only care about the Container ID and Image, so extract those
-    var containerId = line.split(" ")[0];
-    var imageName   = line.split(" ")[1];
-
-    // If imageName contains the name I'm looking for, save the containerId
-    if(imageName.indexOf(name) > -1) containers.push(containerId);
-  }
-
-  // There must be exactly one ID in containers, otherwise it's an error
-  if     (containers.length == 0) console.log("Error: Couldn't find container");
-  else if(containers.length  > 1) console.log("Error: Ambiguous container");
-  else                            return containers[0];
-
-  // Return 0 to signify an error
-  return 0;
-}
-
-function RunCommandInDockerContainer(container, command){
-  var spawn = RunCommand(`docker exec ${container} bash -c ${command}`);
-  // var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
-
-  console.log(">>>", command);
-
-  if(spawn.stdout.length){
-    console.log("===== OUT ==============================");
-    console.log(spawn.stdout.toString("utf-8").trim());
-  }
-
-  if(spawn.stderr.length){
-    console.log("===== ERR ==============================");
-    console.log(spawn.stderr.toString("utf-8").trim());
-  }
-}
-
 function GenerateNginxConfForSSL(serviceName, urlDomain){
   var lines = [
     `upstream ${serviceName} {`                                                                                          ,
@@ -489,7 +488,12 @@ function GenerateNginxConfForSSL(serviceName, urlDomain){
 wizard = function(args){return new Promise((resolve) => {
   var dockerStackName = "muh-stack";
 
-  Initialize(dockerStackName);
+  if(!fs.existsSync("docker-compose.yml")){
+    Initialize(dockerStackName);
+    Nconf("phpmyadmin", null, "9000");
+    DeployDockerStack(dockerStackName);
+    ConfigureMySqlContainer("root", "fizz");
+  }
 
   // Skip all of this if I'm just initializing
   if(false){
@@ -504,7 +508,7 @@ wizard = function(args){return new Promise((resolve) => {
     BuildDockerImage(serviceName, repoName);
     AddServiceToDockerCompose(serviceName);
     Nconf(serviceName, urlDomain, port);
-    DeployDockerStack();
+    DeployDockerStack(dockerStackName);
   }
 
   resolve();
@@ -714,6 +718,11 @@ ssl = function(args){return new Promise((resolve) => {
   resolve();
 })}
 
+renew_ssl = function(args){return new Promise((resolve) => {
+  // TODO
+  ;
+})}
+
 create_database = function(args){return new Promise((resolve) => {
   var containerId  = GetDockerContainerIdFromImageName("mysql");
 
@@ -794,7 +803,8 @@ restore_database = function(args){return new Promise((resolve) => {
   var containerId = GetDockerContainerIdFromImageName("mysql");
 
   var command = `aws s3 ls leif-mysql-backups`;
-  var spawn   = RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  var spawn   = RunCommandInDockerContainer(containerId, command);
+  // var spawn   = RunCommand(`docker exec ${containerId} bash -c ${command}`);
   // var spawn   = spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   if(spawn.stdout.length){
@@ -810,24 +820,28 @@ restore_database = function(args){return new Promise((resolve) => {
   }
 
   command = `aws s3 cp s3://leif-mysql-backups/${fileName} ${fileName}`;
-  RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  RunCommandInDockerContainer(containerId, command);
+  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
   // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   // mysql -u root -pfizz -e 'create database lmaoitworks'
   // command = `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`;
   command = `mysql -e 'create database ${dbName}'`;
-  RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  RunCommandInDockerContainer(containerId, command);
+  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
   // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -p your_database
   // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -pfizz lmaoitworks
   // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql lmaoitworks
   command = `zcat ${fileName} | mysql ${dbName}`;
-  RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  RunCommandInDockerContainer(containerId, command);
+  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
   // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   command = `rm ${fileName}`;
-  RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  RunCommandInDockerContainer(containerId, command);
+  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
   // spawnSync("docker", ["exec", containerId, "bash", "-c", command]);
 
   resolve();
