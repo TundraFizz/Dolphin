@@ -81,6 +81,12 @@ var stuff = {
   }
 };
 
+var rl = readline.createInterface({
+  "input": process.stdin,
+  "output": process.stdout,
+  "completer": completer
+});
+
 function completer(line){
   var autoComplete = [];
 
@@ -93,12 +99,6 @@ function completer(line){
 
   return [hits.length ? hits : autoComplete, line]; // Show all if none found
 }
-
-var rl = readline.createInterface({
-  "input": process.stdin,
-  "output": process.stdout,
-  "completer": completer
-});
 
 function Help(command){
   console.log(`\n========== ${command} ==========`);
@@ -482,47 +482,67 @@ function GenerateNginxConfForSSL(serviceName, urlDomain){
 
 /***************************************** MAIN FUNCTIONS *****************************************/
 wizard = function(args){return new Promise((resolve) => {
+
+  // wizard -r https://github.com/TundraFizz/Docker-Sample-App -u mudki.ps
+  // wizard -r https://github.com/TundraFizz/Coss-Stats -u coss-stats.io
+  // wizard -r git@github.com:TundraFizz/Coss-Stats.git -u coss-stats.io
+
   var dockerStackName = "muh-stack";
+  var repoUrl     = (typeof(args["-r"]) === "string" ? args["-r"] : null);
+  var urlDomain   = (typeof(args["-u"]) === "string" ? args["-u"] : null);
+  var repoName    = "";
+  var serviceName = "";
+  var port        = "80";
 
   if(!fs.existsSync("docker-compose.yml")){
     Initialize(dockerStackName);
     Nconf("phpmyadmin", null, "9000");
     DeployDockerStack(dockerStackName);
     ConfigureMySqlContainer("root", "fizz");
+
+    if("--initialize" in args){
+      console.log("ONLY initialize this");
+      resolve();return;
+    }
   }
 
-  var repoUrl     = "";
-  var repoName    = "";
-  var serviceName = "";
-  var urlDomain   = "";
-  var port        = "";
-  var go          = false;
-
-  if("--test" in args){
-    repoUrl     = "https://github.com/TundraFizz/Docker-Sample-App";
-    urlDomain   = "mudki.ps";
-    go          = true;
-
-    // Remove all trailing forward slashes from the URL
-    while(repoUrl[repoUrl.length-1] == "/") repoUrl = repoUrl.substring(0, repoUrl.length-1);
-
-    // Extract the repository's name from the URL
-    repoName    = repoUrl.split("/").pop();
-
-    // Set the service's name to the lowercase version of the repository's name
-    serviceName = repoName.toLowerCase();
+  if(!repoUrl || !urlDomain){
+    console.log("Missing arguments");
+    resolve();return;
   }
 
-  // Skip all of this if I'm just initializing
-  if(go){
-    CloneRepository(repoUrl);
-    ConfigureSettings(repoName);
-    BuildDockerImage(serviceName, repoName);
-    AddServiceToDockerCompose(serviceName);
-    Nconf(serviceName, urlDomain, "80");
-    DeployDockerStack(dockerStackName);
-    RunCommand(`docker service update muh-stack_nginx`);
-  }
+  // Remove all trailing forward slashes from the URL
+  while(repoUrl[repoUrl.length-1] == "/")
+    repoUrl = repoUrl.substring(0, repoUrl.length-1);
+
+  // HANDLE HTTPS AND SSH
+  // https://github.com/TundraFizz/Coss-Stats
+  // git@github.com:TundraFizz/Coss-Stats.git
+  if(repoUrl.substring(repoUrl.length-4, repoUrl.length) == ".git")
+    repoUrl = repoUrl.substring(0, repoUrl.length-4);
+
+  // Extract the repository's name from the URL
+  repoName = repoUrl.split("/").pop();
+
+  // Set the service's name to the lowercase version of the repository's name
+  serviceName = repoName.toLowerCase();
+
+  console.log("==================================================");
+  console.log(`dockerStackName | ${dockerStackName}`);
+  console.log(`repoUrl         | ${repoUrl}`);
+  console.log(`repoName        | ${repoName}`);
+  console.log(`serviceName     | ${serviceName}`);
+  console.log(`urlDomain       | ${urlDomain}`);
+  console.log("==================================================");
+  console.log();
+
+  CloneRepository(repoUrl);
+  ConfigureSettings(repoName);
+  BuildDockerImage(serviceName, repoName);
+  AddServiceToDockerCompose(serviceName);
+  Nconf(serviceName, urlDomain, "80");
+  DeployDockerStack(dockerStackName);
+  RunCommand(`docker service update muh-stack_nginx`);
 
   resolve();
 })}
@@ -922,6 +942,3 @@ Main();
 /***** TODO *****/
 // Display text on what happens
 // Handle errors
-
-// Restart a service
-// RunCommand(`docker service update muh-stack_nginx`);
