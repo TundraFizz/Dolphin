@@ -1,6 +1,6 @@
 === Utility ============================
 U1: RunCommand
-U2: RunCommandInDockerContainer [U1]
+U2: RunCommandInDockerContainer
 U3: GetDockerContainerIdFromImageName [U1]
 U4: CreateBaseDockerCompose
 
