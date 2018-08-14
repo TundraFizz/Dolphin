@@ -2,7 +2,7 @@ var fs          = require("fs");
 var yaml        = require("./yaml");
 var readline    = require("readline");
 var {spawnSync} = require("child_process");
-const SINGLE_FILES_SHA1   = "29250719919A85B1D082C414FB47FD750AC5C9F9";
+const SINGLE_FILES_SHA1   = "C18FB5C7A6266BA182A0BEE66E7538A89400D48A";
 const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/temp.tar.gz";
 
 /* Commands are an array of objects [
@@ -280,9 +280,11 @@ function CreateBaseDockerCompose(){
         ]
       },
       "mysql": {
-        "image": "mysql",
+        // "image": "mysql",
+        "image": "mysql-custom",
         "volumes": [
-          "./single_files/mysql.cnf:/etc/mysql/conf.d/",
+          // "./single_files/mysql.cnf:/etc/mysql/conf.d/mysql.cnf",
+          "./single_files/mysql.cnf:/mysql.cnf",
           "sql_storage:/var/lib/mysql"
         ],
         "environment": {
@@ -322,6 +324,22 @@ function Initialize(dockerStackName){
     return;
 
   console.log("Starting initialization...");
+
+  console.log("Creating directory mysql-custom-image...");
+  RunCommand("mkdir mysql-custom-image");
+
+  // Create a temporary Dockerfile for a custom MySQL image that will update itself and install the following:
+  // - nano
+  // - python-pip
+  // - awscli
+  var customMySqlDockerfile = "FROM mysql\n";
+  customMySqlDockerfile += "RUN apt-get update && apt-get install -y nano && apt-get install -y python-pip && pip install -q awscli\n";
+  fs.writeFileSync("mysql-custom-image/Dockerfile", customMySqlDockerfile, "utf-8");
+
+  console.log("Building the custom MySQL image");
+  RunCommand("docker build -t mysql-custom mysql-custom-image");
+  console.log("Removing stuff");
+  RunCommand("rm -rf mysql-custom-image");
 
   if(!fs.existsSync("docker-compose.yml")) CreateBaseDockerCompose();
   if(!fs.existsSync("logs"))               fs.mkdirSync("logs");
@@ -435,11 +453,6 @@ function ConfigureMySqlContainer(dbUsername, dbPassword){
   var user        = "root";                            // NOT CURRENTLY USED!
   var password    = "fizz";                            // NOT CURRENTLY USED!
   var commands    = [
-    `apt-get -qq update`,                              // Update the system
-    `apt-get -qq install -y apt-utils`,                // Install apt-utils
-    `apt-get -qq install -y python-pip`,               // Install the Python package manager
-    `pip install -q awscli`                            // Install the AWS Command-line Interface
-
     // `echo '[mysql]'               > ${mySqlConfig}`, // Create config file
     // `echo 'host=${host}'         >> ${mySqlConfig}`, // Append to the config file
     // `echo 'user=${user}'         >> ${mySqlConfig}`,
@@ -637,7 +650,7 @@ wizard = function(args){return new Promise((resolve) => {
     Initialize(dockerStackName);
     Nconf("phpmyadmin", null, "9000");
     DeployDockerStack(dockerStackName);
-    ConfigureMySqlContainer("root", "fizz");
+    // ConfigureMySqlContainer("root", "fizz");
 
     if("--init" in args){
       console.log("ONLY initialize this");
@@ -860,7 +873,7 @@ renew_ssl = function(args){return new Promise((resolve) => {
 })}
 
 create_database = function(args){return new Promise((resolve) => {
-  var containerId  = GetDockerContainerIdFromImageName("mysql");
+  var containerId = GetDockerContainerIdFromImageName("mysql");
 
   // Required arguments:
   // fileName   | Name of the file to create the database from
@@ -879,14 +892,13 @@ create_database = function(args){return new Promise((resolve) => {
   RunCommand(`docker cp ${fileName} ${containerId}:/${fileName}`);
 
   var commands = [
-    `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`, // Create the database
-    `mysql -u ${dbUsername} -p${dbPassword} ${dbName} < ${fileName}`,        // Import data from the .sql file into the database
-    `rm /${fileName}`                                                        // Remove the .sql file from the container
+    `mysql --defaults-file=/mysql.cnf -e 'create database ${dbName}'`, // Create the database
+    `mysql --defaults-file=/mysql.cnf ${dbName} < ${fileName}`,        // Import data from the .sql file into the database
+    `rm /${fileName}`                                                  // Remove the .sql file from the container
   ];
 
-  RunCommandInDockerContainer(containerId, commands[0]);
-  RunCommandInDockerContainer(containerId, commands[1]);
-  RunCommandInDockerContainer(containerId, commands[2]);
+  for(var i = 0; i < commands.length; i++)
+    RunCommandInDockerContainer(containerId, commands[i]);
 
   resolve();
 })}
@@ -917,9 +929,9 @@ backup_database = function(args){return new Promise((resolve) => {
   var containerId = GetDockerContainerIdFromImageName("mysql");
 
   var commands = [
-    `mysqldump ${dbName} | gzip --best > ${fileName}`, // Create a backup on the container with the best compression method
-    `aws s3 cp ${fileName} s3://${bucketName}`,        // Upload the backup to my AWS S3 bucket
-    `rm ${fileName}`                                   // Remove the backup file on the container
+    `mysqldump --defaults-file=/mysql.cnf ${dbName} | gzip --best > ${fileName}`, // Create a backup on the container with the best compression method
+    `aws s3 cp ${fileName} s3://${bucketName}`,                                   // Upload the backup to my AWS S3 bucket
+    `rm ${fileName}`                                                              // Remove the backup file on the container
   ];
 
   for(var i = 0; i < commands.length; i++)
@@ -939,7 +951,6 @@ restore_database = function(args){return new Promise((resolve) => {
 
   var command = `aws s3 ls leif-mysql-backups`;
   var spawn   = RunCommandInDockerContainer(containerId, command);
-  // var spawn   = RunCommand(`docker exec ${containerId} bash -c ${command}`);
 
   if(spawn.stdout.length){
     // A list of files will be returned in alphanumeric order. This means that the most
@@ -953,26 +964,15 @@ restore_database = function(args){return new Promise((resolve) => {
     fileName = fileName.split(" ").pop();
   }
 
-  command = `aws s3 cp s3://leif-mysql-backups/${fileName} ${fileName}`;
-  RunCommandInDockerContainer(containerId, command);
-  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  var commands = [
+    `aws s3 cp s3://leif-mysql-backups/${fileName} ${fileName}`,       // Download the backed-up MySQL database archive
+    `mysql --defaults-file=/mysql.cnf -e 'create database ${dbName}'`, // Create the database
+    `zcat ${fileName} | mysql --defaults-file=/mysql.cnf ${dbName}`,   // Load the data in from the file
+    `rm ${fileName}`                                                   // Remove the file
+  ];
 
-  // mysql -u root -pfizz -e 'create database lmaoitworks'
-  // command = `mysql -u ${dbUsername} -p${dbPassword} -e 'create database ${dbName}'`;
-  command = `mysql -e 'create database ${dbName}'`;
-  RunCommandInDockerContainer(containerId, command);
-  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
-
-  // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -p your_database
-  // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql -u 'root' -pfizz lmaoitworks
-  // zcat mysql-backup-2018-08-10T21-14-17.sql.gz | mysql lmaoitworks
-  command = `zcat ${fileName} | mysql ${dbName}`;
-  RunCommandInDockerContainer(containerId, command);
-  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
-
-  command = `rm ${fileName}`;
-  RunCommandInDockerContainer(containerId, command);
-  // RunCommand(`docker exec ${containerId} bash -c ${command}`);
+  for(var i = 0; i < commands.length; i++)
+    RunCommandInDockerContainer(containerId, commands[i]);
 
   resolve();
 })}
