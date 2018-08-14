@@ -748,9 +748,11 @@ wizard = function(args){return new Promise((done) => {
     }
   }
 
-  console.log("Verifing integrity...");
-  if(VerifyIntegrity()) console.log("...looks GOOD!");
-  else                  console.log("...the integrity check has FAILED!");
+  // Wait until the NGINX, MySQL, and phpMyAdmin containers are all running
+  while(VerifyIntegrity() == false){
+    RunCommand("sleep 1");
+    console.log("Trying again");
+  }
 
   if(!repoUrl || !urlDomain){
     console.log("Missing arguments");
