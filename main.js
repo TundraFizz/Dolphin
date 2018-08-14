@@ -280,10 +280,8 @@ function CreateBaseDockerCompose(){
         ]
       },
       "mysql": {
-        // "image": "mysql",
         "image": "mysql-custom",
         "volumes": [
-          // "./single_files/mysql.cnf:/etc/mysql/conf.d/mysql.cnf",
           "./single_files/mysql.cnf:/mysql.cnf",
           "sql_storage:/var/lib/mysql"
         ],
@@ -315,6 +313,49 @@ function CreateBaseDockerCompose(){
 
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(dockerCompose), "utf-8");
   console.log("Complete!");
+}
+
+function VerifyIntegrity(){
+  // This is important because whenever you're deploying a new application,
+  // you must make sure that all the base containers are successfully running.
+  // This includes NGINX, MySQL, and phpMyAdmin
+  var nginx      = false;
+  var mysql      = false;
+  var phpmyadmin = false;
+  var spawn      = RunCommand("docker service ls");
+  var output     = spawn.stdout.toString("utf-8").trim().split("\n");
+
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // There are six attributes for each service delimited by spaces:
+    // Service ID, Name, Mode, Replicas, Image, Ports
+    // I only care about the Name and Replicas, so extract those
+    var serviceName     = line.split(" ")[1];
+    var serviceReplicas = line.split(" ")[3];
+
+    // Extract the first value from serviceReplicas: 1/1
+    serviceReplicas = serviceReplicas.split("/")[0];
+
+    if(serviceName.indexOf("nginx")      > -1) nginx      = true;
+    if(serviceName.indexOf("mysql")      > -1) mysql      = true;
+    if(serviceName.indexOf("phpmyadmin") > -1) phpmyadmin = true;
+
+    if(serviceName.indexOf("nginx")      > -1 ||
+       serviceName.indexOf("mysql")      > -1 ||
+       serviceName.indexOf("phpmyadmin") > -1){
+
+      if(serviceReplicas.indexOf("0") > -1)
+       return false;
+    }
+  }
+
+  if(!nginx || !mysql || !phpmyadmin)
+    return false;
+
+  return true;
 }
 /**************************************************************************************************/
 
@@ -564,51 +605,103 @@ function GenerateNginxConfForSSL(serviceName, urlDomain){
   for(var i = 0; i < lines.length; i++)
     fs.appendFileSync(fileName, lines[i] + "\n");
 }
+
+function CreateDatabase(repoName){
+  var attempts = 1;
+  var mysqlContainerId = null;
+
+  console.log("Getting MySQL container...");
+
+  // Try 60 times (once per second)
+  while(attempts < 60 && !mysqlContainerId){
+    var result = GetDockerContainerIdFromImageName("mysql");
+
+    // If a valid result was returned, set it to mysqlContainerId
+    if(result != 0){
+      mysqlContainerId = result;
+      break;
+    }
+
+    RunCommand("sleep 1");
+  }
+
+  // The MySQL container wasn't found
+  if(!mysqlContainerId){
+    console.log("Couldn't find MySQL container");
+    return;
+  }else
+    console.log("...found!");
+
+  // Required arguments:
+  // fileName | Name of the file to create the database from
+  //
+  // Optional arguments:
+  // dbName   | Name of the database that will be created [fileName minus extension]
+
+  // Improve this later
+  var dbName   = "coss";
+
+  // A file named "db.sql" should be put into the repository so it can be found here
+  // For now it's currently in "temp/coss.sql" and I need to fix this later
+  var fileName = "coss.sql";
+  var filePath = `${repoName}/temp/coss.sql`;
+
+  // Copy the .sql file into the container
+  RunCommand(`docker cp ${filePath} ${mysqlContainerId}:/${fileName}`);
+
+  var commands = [
+    `mysql --defaults-file=/mysql.cnf -e 'create database ${dbName}'`, // Create the database
+    `mysql --defaults-file=/mysql.cnf ${dbName} < ${fileName}`,        // Import data from the .sql file into the database
+    `rm /${fileName}`                                                  // Remove the .sql file from the container
+  ];
+
+  for(var i = 0; i < commands.length; i++)
+    RunCommandInDockerContainer(mysqlContainerId, commands[i]);
+}
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
-z = function(args){return new Promise((resolve) => {
-  var dockerStackName = "muh-stack";
-  var repoUrl     = "git@github.com:TundraFizz/Coss-Stats.git";
-  var repoName    = "Coss-Stats";
-  var serviceName = "coss-stats";
-  var urlDomain   = "coss-stats.io";
-  var port        = "80";
+z = function(args){return new Promise((done) => {
+  console.log("Verifing integrity...");
+  if(VerifyIntegrity()) console.log("...looks GOOD!");
+  else                  console.log("...the integrity check has FAILED!");
+  done();return;
 
-  // var dockerStackName = "muh-stack";
-  // var repoUrl     = "https://github.com/TundraFizz/Docker-Sample-App";
-  // var repoName    = "Docker-Sample-App";
-  // var serviceName = "docker-sample-app";
-  // var urlDomain   = "mudki.ps";
-  // var port        = "80";
+  // This is used for custom tests to debug
+  // CreateDatabase("Coss-Stats");
+
+  var dockerStackName = "muh-stack";
+  var repoUrl         = "git@github.com:TundraFizz/Coss-Stats.git";
+  var repoName        = "Coss-Stats";
+  var serviceName     = "coss-stats";
+  var urlDomain       = "coss-stats.io";
 
   console.log("==================================================");
-  console.log(`dockerStackName | ${dockerStackName}`);
-  console.log(`repoUrl         | ${repoUrl}`);
-  console.log(`repoName        | ${repoName}`);
-  console.log(`serviceName     | ${serviceName}`);
-  console.log(`urlDomain       | ${urlDomain}`);
+  console.log(`dockerStackName | ${dockerStackName}`); // muh-stack
+  console.log(`repoUrl         | ${repoUrl}`);         // git@github.com:TundraFizz/Coss-Stats.git
+  console.log(`repoName        | ${repoName}`);        // Coss-Stats
+  console.log(`serviceName     | ${serviceName}`);     // coss-stats
+  console.log(`urlDomain       | ${urlDomain}`);       // coss-stats.io
   console.log("==================================================");
   console.log();
 
   CloneRepository(repoUrl);
-  ConfigureSettings(repoName);
+  if(true){
+    ConfigureSettings(repoName);
+    CreateDatabase(repoName);
+  }
   BuildDockerImage(serviceName, repoName);
   AddServiceToDockerCompose(serviceName);
   Nconf(serviceName, urlDomain, "80");
   DeployDockerStack(dockerStackName);
-
-  // RESTART THE NGINX CONTAINER
-  var container = GetDockerContainerIdFromImageName("nginx");
-  RunCommand(`docker container restart ${container}`);
-
-  resolve();
+  RunCommand(`docker service update muh-stack_nginx`);
+  done();
 })}
 
-remove_service = function(args){return new Promise((resolve) => {
+remove_service = function(args){return new Promise((done) => {
   if(!("-r" in args)){
     console.log("Repository name isn't given");
-    resolve();return;
+    done();return;
   }
 
   var repoName    = args["-r"];
@@ -630,11 +723,10 @@ remove_service = function(args){return new Promise((resolve) => {
   RunCommand(`rm nginx_conf.d/${serviceName}.conf`);
   // Edit the file docker-compose.yml
 
-  resolve();
+  done();
 })}
 
-wizard = function(args){return new Promise((resolve) => {
-
+wizard = function(args){return new Promise((done) => {
   // wizard -r https://github.com/TundraFizz/Docker-Sample-App -u mudki.ps
   // wizard -r https://github.com/TundraFizz/Coss-Stats -u coss-stats.io
   // wizard -r git@github.com:TundraFizz/Coss-Stats.git -u coss-stats.io
@@ -644,32 +736,34 @@ wizard = function(args){return new Promise((resolve) => {
   var urlDomain   = (typeof(args["-u"]) === "string" ? args["-u"] : null);
   var repoName    = "";
   var serviceName = "";
-  var port        = "80";
 
   if(!fs.existsSync("docker-compose.yml")){
     Initialize(dockerStackName);
     Nconf("phpmyadmin", null, "9000");
     DeployDockerStack(dockerStackName);
-    // ConfigureMySqlContainer("root", "fizz");
 
     if("--init" in args){
       console.log("ONLY initialize this");
-      resolve();return;
+      done();return;
     }
   }
 
+  console.log("Verifing integrity...");
+  if(VerifyIntegrity()) console.log("...looks GOOD!");
+  else                  console.log("...the integrity check has FAILED!");
+
   if(!repoUrl || !urlDomain){
     console.log("Missing arguments");
-    resolve();return;
+    done();return;
   }
 
   // Remove all trailing forward slashes from the URL
   while(repoUrl[repoUrl.length-1] == "/")
     repoUrl = repoUrl.substring(0, repoUrl.length-1);
 
-  // HANDLE HTTPS AND SSH
-  // https://github.com/TundraFizz/Coss-Stats
-  // git@github.com:TundraFizz/Coss-Stats.git
+  // Remove the .git at the end if it's a GIT link
+  // HTTPS: https://github.com/TundraFizz/Coss-Stats
+  // GIT  : git@github.com:TundraFizz/Coss-Stats.git
   if(repoUrl.substring(repoUrl.length-4, repoUrl.length) == ".git")
     repoUrl = repoUrl.substring(0, repoUrl.length-4);
 
@@ -680,26 +774,29 @@ wizard = function(args){return new Promise((resolve) => {
   serviceName = repoName.toLowerCase();
 
   console.log("==================================================");
-  console.log(`dockerStackName | ${dockerStackName}`);
-  console.log(`repoUrl         | ${repoUrl}`);
-  console.log(`repoName        | ${repoName}`);
-  console.log(`serviceName     | ${serviceName}`);
-  console.log(`urlDomain       | ${urlDomain}`);
+  console.log(`dockerStackName | ${dockerStackName}`); // muh-stack
+  console.log(`repoUrl         | ${repoUrl}`);         // git@github.com:TundraFizz/Coss-Stats.git
+  console.log(`repoName        | ${repoName}`);        // Coss-Stats
+  console.log(`serviceName     | ${serviceName}`);     // coss-stats
+  console.log(`urlDomain       | ${urlDomain}`);       // coss-stats.io
   console.log("==================================================");
   console.log();
 
   CloneRepository(repoUrl);
-  ConfigureSettings(repoName);
+  if(true){
+    ConfigureSettings(repoName);
+    CreateDatabase(repoName);
+  }
   BuildDockerImage(serviceName, repoName);
   AddServiceToDockerCompose(serviceName);
   Nconf(serviceName, urlDomain, "80");
   DeployDockerStack(dockerStackName);
   RunCommand(`docker service update muh-stack_nginx`);
 
-  resolve();
+  done();
 })}
 
-nuke_everything = function(args){return new Promise((resolve) => {
+nuke_everything = function(args){return new Promise((done) => {
   // Kill all Docker services
   // Delete all Docker images
   // Delete the following:
@@ -784,10 +881,10 @@ nuke_everything = function(args){return new Promise((resolve) => {
     }
   }
 
-  resolve();
+  done();
 })}
 
-view_all = function(args){return new Promise((resolve) => {
+view_all = function(args){return new Promise((done) => {
   var spawn;
 
   RunCommand("clear");
@@ -807,10 +904,10 @@ view_all = function(args){return new Promise((resolve) => {
   spawn = RunCommand("docker volume ls");
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
 
-  resolve();
+  done();
 })}
 
-ssl = function(args){return new Promise((resolve) => {
+ssl = function(args){return new Promise((done) => {
   var urlDomain = "mudki.ps";
   var spawn = RunCommand("docker container ls");
 
@@ -830,7 +927,7 @@ ssl = function(args){return new Promise((resolve) => {
   // The NGINX container wasn't found
   if(!foundNginx){
     console.log("Couldn't find NGINX container; SSL certificate not generated");
-    resolve();
+    done();
     return;
   }
 
@@ -864,15 +961,15 @@ ssl = function(args){return new Promise((resolve) => {
   // Reload the Nginx config files inside of the Nginx container
   // spawn = RunCommand(`docker exec -i ${nginxContainerId} nginx -s reload`);
 
-  resolve();
+  done();
 })}
 
-renew_ssl = function(args){return new Promise((resolve) => {
+renew_ssl = function(args){return new Promise((done) => {
   // TODO
-  ;
+  done();
 })}
 
-create_database = function(args){return new Promise((resolve) => {
+create_database = function(args){return new Promise((done) => {
   var containerId = GetDockerContainerIdFromImageName("mysql");
 
   // Required arguments:
@@ -900,10 +997,10 @@ create_database = function(args){return new Promise((resolve) => {
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(containerId, commands[i]);
 
-  resolve();
+  done();
 })}
 
-backup_database = function(args){return new Promise((resolve) => {
+backup_database = function(args){return new Promise((done) => {
   var date  = new Date();
   var year  = date.getFullYear(); // 4-digit year
   var month = date.getMonth()+1;  // [0-11]
@@ -937,10 +1034,10 @@ backup_database = function(args){return new Promise((resolve) => {
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(containerId, commands[i]);
 
-  resolve();
+  done();
 })}
 
-restore_database = function(args){return new Promise((resolve) => {
+restore_database = function(args){return new Promise((done) => {
   var dbName      = "coss";
   var dbUsername  = "root";
   var dbPassword  = "fizz";
@@ -974,10 +1071,10 @@ restore_database = function(args){return new Promise((resolve) => {
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(containerId, commands[i]);
 
-  resolve();
+  done();
 })}
 
-help = function(){return new Promise((resolve) => {
+help = function(){return new Promise((done) => {
   console.log();
   maxLength = 0;
   for(var key in stuff)
@@ -995,10 +1092,10 @@ help = function(){return new Promise((resolve) => {
   }
 
   console.log();
-  resolve();
+  done();
 })}
 
-quit = function(){return new Promise((resolve) => {resolve(true);})}
+quit = function(){return new Promise((done) => {done(true);})}
 /**************************************************************************************************/
 
 function ParseCommandAndArgs(input){
@@ -1030,12 +1127,12 @@ function ParseCommandAndArgs(input){
   };
 }
 
-ProcessInput = function(input){return new Promise((resolve) => {
+ProcessInput = function(input){return new Promise((done) => {
   input = ParseCommandAndArgs(input);
 
   if(input["error"]){
     console.log(input["error"]);
-    resolve("prompt"); return;
+    done("prompt"); return;
   }
 
   var command = input["command"];
@@ -1043,19 +1140,19 @@ ProcessInput = function(input){return new Promise((resolve) => {
 
   if(Object.keys(args).length == 0 && stuff[command]["commands"]){
     Help(command);
-    resolve("prompt"); return;
+    done("prompt"); return;
   }
 
   if(command in stuff){
     // If the eval returns true, quit the program; otherwise keep it running
     eval(`${command}(args)`)
     .then((o) => {
-      if(o) resolve("close");
-      else  resolve("prompt");
+      if(o) done("close");
+      else  done("prompt");
     });
   }else{
     console.log("Unkown command");
-    resolve("prompt"); return;
+    done("prompt"); return;
   }
 })}
 
