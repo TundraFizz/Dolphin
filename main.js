@@ -749,10 +749,13 @@ wizard = function(args){return new Promise((done) => {
   }
 
   // Wait until the NGINX, MySQL, and phpMyAdmin containers are all running
+  var vi = 0;
   while(VerifyIntegrity() == false){
+    if(vi++ == 0) console.log("Waiting for NGINX, MySQL, and phpMyAdmin");
     RunCommand("sleep 1");
-    console.log("Trying again");
   }
+
+  if(vi) console.log("NGINX, MySQL, and phpMyAdmin are now running");
 
   if(!repoUrl || !urlDomain){
     console.log("Missing arguments");
@@ -910,31 +913,15 @@ view_all = function(args){return new Promise((done) => {
 })}
 
 ssl = function(args){return new Promise((done) => {
-  var urlDomain = "mudki.ps";
-  var spawn = RunCommand("docker container ls");
-
-  // Get the entire output and split it by newline
-  var output = spawn.stdout.toString("utf-8").split("\n");
-  var foundNginx = false;
-
-  // Search for the Nginx container
-  for(var i = 0; i < output.length; i++){
-    if(output[i].indexOf("nginx") > -1){
-      output = output[i];
-      foundNginx = true;
-      break;
-    }
-  }
+  var urlDomain = "coss-stats.io";
+  var containerId = GetDockerContainerIdFromImageName("nginx");
 
   // The NGINX container wasn't found
-  if(!foundNginx){
+  if(!containerId){
     console.log("Couldn't find NGINX container; SSL certificate not generated");
     done();
     return;
   }
-
-  // Split the output by space and take the first index which is the ID of the Nginx container
-  var nginxContainerId = output.split(" ")[0];
 
   console.log("Creating an SSL certificate");
 
@@ -945,7 +932,7 @@ ssl = function(args){return new Promise((done) => {
      --register-unsafely-without-email --webroot --agree-tos \
      -w /ssl_challenge --staging -d mudki.ps */
 
-  spawn = RunCommand(`docker run -i --rm --name certbot -v muh-stack_ssl:/etc/letsencrypt -v muh-stack_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`);
+  var spawn = RunCommand(`docker run -i --rm --name certbot -v muh-stack_ssl:/etc/letsencrypt -v muh-stack_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`);
 
   console.log("=== OUT ===================================================");
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
@@ -954,10 +941,10 @@ ssl = function(args){return new Promise((done) => {
   console.log("===========================================================");
 
   // Generate a new Nginx config file for the service
-  GenerateNginxConfForSSL("yolo-swag", "mudki.ps");
+  GenerateNginxConfForSSL("coss-stats", "coss-stats.io");
 
   // Restart the NGINX container
-  RunCommand(`docker container restart ${nginxContainerId}`);
+  RunCommand(`docker container restart ${containerId}`);
 
   // I DON'T THINK THIS WORKS, ONLY RESTARTING THE CONTAINER DOES!
   // Reload the Nginx config files inside of the Nginx container
