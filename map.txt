@@ -1,11 +1,13 @@
 === Utility ============================
 U1: RunCommand
 U2: RunCommandInDockerContainer
-U3: GetDockerContainerIdFromImageName [U1]
-U4: CreateBaseDockerCompose
+U3: GetDockerContainerIdFromImageName
+U4: GetDockerServiceIdFromImageName
+U5: GetDockerImageIdFromImageName
+U6: CreateBaseDockerCompose
 
 === Helper =============================
-Initialize [U1, U4]
+Initialize [U1, U6]
 Nconf [U1]
 DeployDockerStack [U1]
 ConfigureMySqlContainer [U1, U2, U3]
@@ -14,6 +16,8 @@ ConfigureSettings [U1?]
 BuildDockerImage [U1]
 AddServiceToDockerCompose [none]
 GenerateNginxConfForSSL [none]
+CreateDatabase [U1, U2, U3]
+VerifyIntegrity [U1]
 
 === Main ===============================
 
@@ -21,6 +25,7 @@ wizard
  -Initialize
  -Nconf
  -DeployDockerStack
+ -VerifyIntegrity
  -ConfigureMySqlContainer
  -CloneRepository
  -ConfigureSettings
