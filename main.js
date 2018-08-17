@@ -767,7 +767,6 @@ wizard = function(args){return new Promise((done) => {
   console.log(`serviceName     | ${serviceName}`);     // coss-stats
   console.log(`urlDomain       | ${urlDomain}`);       // coss-stats.io
   console.log("==================================================");
-  console.log();
 
   CloneRepository(repoUrl);
   ConfigureSettings(repoName);
@@ -1129,7 +1128,7 @@ ProcessInput = function(input){return new Promise((done) => {
 })}
 
 function Main(){
-  console.log("==================== Dolphin ====================");
+  console.log("==================== Dolphin =====================");
 
   rl.setPrompt("> ");
   rl.prompt();
