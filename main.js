@@ -130,7 +130,10 @@ function Help(command){
 }
 
 /**************************************** UTILITY FUNCTIONS ***************************************/
-function RunCommand(command){
+function RunCommand(command, flavorText = null){
+  if(flavorText)
+    console.log();
+
   var array = command.split(" ");
   var cmd   = array[0];
   var args  = [];
@@ -471,28 +474,24 @@ function ConfigureMySqlContainer(dbUsername, dbPassword){
 }
 
 function CloneRepository(repoUrl){
-  console.log("Cloning repository:", repoUrl);
-  var spawn = RunCommand(`git clone ${repoUrl}`);
-  console.log("Complete!");
+  return RunCommand(`git clone ${repoUrl}`, `Cloning repository: ${repoUrl}`);
+  ;
 }
 
 function ConfigureSettings(repoName){
-  // If there's a config.yml file for this repository, edit it
-  var possiblePath = `${repoName}/config.yml`;
+  var configPath = `${repoName}/config.yml`;
 
-  if(!fs.existsSync(possiblePath))
+  // Skip this if there's no config.yml file
+  if(!fs.existsSync(configPath))
     return;
 
   console.log("Configuring settings:", repoName);
-  var spawn = spawnSync("nano", [possiblePath], {"stdio": "inherit", "detached": true});
-  console.log("Complete!");
+  var spawn = spawnSync("nano", [configPath], {"stdio": "inherit", "detached": true});
 }
 
 function BuildDockerImage(serviceName, repoName){
-  console.log("Building Docker image:", repoName);
-  console.log("         into service:", serviceName);
-  var spawn = RunCommand(`docker build -t ${serviceName} ${repoName}`);
-  console.log("Complete!");
+  return spawn = RunCommand(`docker build -t ${serviceName} ${repoName}`, `Building Docker image "${repoName}" into service "${serviceName}"`);
+  ;
 }
 
 function AddServiceToDockerCompose(serviceName){
@@ -567,6 +566,16 @@ function GenerateNginxConfForSSL(serviceName, urlDomain){
 }
 
 function CreateDatabase(repoName){
+  // A file named "database.sql" should be put into the repository so it can be found here
+  // Improve this later
+  var dbName       = "coss";
+  var fileName     = "coss.sql";
+  var databasePath = `${repoName}/database.sql`;
+
+  // Skip this if there's no database.sql file
+  if(!fs.existsSync(databasePath))
+    return;
+
   var attempts = 1;
   var mysqlContainerId = null;
 
@@ -592,22 +601,8 @@ function CreateDatabase(repoName){
   }else
     console.log("...found!");
 
-  // Required arguments:
-  // fileName | Name of the file to create the database from
-  //
-  // Optional arguments:
-  // dbName   | Name of the database that will be created [fileName minus extension]
-
-  // Improve this later
-  var dbName   = "coss";
-
-  // A file named "db.sql" should be put into the repository so it can be found here
-  // For now it's currently in "temp/coss.sql" and I need to fix this later
-  var fileName = "coss.sql";
-  var filePath = `${repoName}/temp/coss.sql`;
-
   // Copy the .sql file into the container
-  RunCommand(`docker cp ${filePath} ${mysqlContainerId}:/${fileName}`);
+  RunCommand(`docker cp ${databasePath} ${mysqlContainerId}:/${fileName}`);
 
   var commands = [
     `mysql --defaults-file=/mysql.cnf -e 'create database ${dbName}'`, // Create the database
@@ -675,40 +670,8 @@ function VerifyIntegrity(){
 
 /***************************************** MAIN FUNCTIONS *****************************************/
 z = function(args){return new Promise((done) => {
-  console.log("Verifing integrity...");
-  if(VerifyIntegrity()) console.log("...looks GOOD!");
-  else                  console.log("...the integrity check has FAILED!");
-  done();return;
-
-  // This is used for custom tests to debug
-  // CreateDatabase("Coss-Stats");
-
-  var dockerStackName = "dolphin";
-  var repoUrl         = "git@github.com:TundraFizz/Coss-Stats.git";
-  var repoName        = "Coss-Stats";
-  var serviceName     = "coss-stats";
-  var urlDomain       = "coss-stats.io";
-
-  console.log("==================================================");
-  console.log(`dockerStackName | ${dockerStackName}`); // dolphin
-  console.log(`repoUrl         | ${repoUrl}`);         // git@github.com:TundraFizz/Coss-Stats.git
-  console.log(`repoName        | ${repoName}`);        // Coss-Stats
-  console.log(`serviceName     | ${serviceName}`);     // coss-stats
-  console.log(`urlDomain       | ${urlDomain}`);       // coss-stats.io
-  console.log("==================================================");
-  console.log();
-
-  CloneRepository(repoUrl);
-  if(true){
-    ConfigureSettings(repoName);
-    CreateDatabase(repoName);
-  }
-  BuildDockerImage(serviceName, repoName);
-  AddServiceToDockerCompose(serviceName);
-  Nconf(serviceName, urlDomain, "80");
-  DeployDockerStack(dockerStackName);
-  RunCommand(`docker service update dolphin_nginx`);
   done();
+  return;
 })}
 
 remove_service = function(args){return new Promise((done) => {
@@ -807,10 +770,8 @@ wizard = function(args){return new Promise((done) => {
   console.log();
 
   CloneRepository(repoUrl);
-  if(true){
-    ConfigureSettings(repoName);
-    CreateDatabase(repoName);
-  }
+  ConfigureSettings(repoName);
+  CreateDatabase(repoName);
   BuildDockerImage(serviceName, repoName);
   AddServiceToDockerCompose(serviceName);
   Nconf(serviceName, urlDomain, "80");
