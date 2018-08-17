@@ -18,8 +18,16 @@ const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/temp.tar.gz";
   if(spawn.stderr.length) console.log("ERR:", spawn.stderr.toString("utf-8")); */
 
 var stuff = {
+  "initialize": {
+    "helpText": "??????????",
+    "commands": null
+  },
   "wizard": {
     "helpText": "??????????",
+    "commands": null
+  },
+  "remove_service": {
+    "helpText": "Removes a service",
     "commands": null
   },
   "nuke_everything": {
@@ -77,18 +85,6 @@ var stuff = {
   },
   "quit": {
     "helpText": "Quits the program",
-    "commands": null
-  },
-  "remove_service": {
-    "helpText": "Removes a service",
-    "commands": null
-  },
-  "z": {
-    "helpText": "??????????",
-    "commands": null
-  },
-  "initialize": {
-    "helpText": "??????????",
     "commands": null
   }
 };
@@ -669,11 +665,6 @@ function VerifyIntegrity(){
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
-z = function(args){return new Promise((done) => {
-  done();
-  return;
-})}
-
 initialize = function(args){return new Promise((done) => {
   var dockerStackName = "dolphin";
 
