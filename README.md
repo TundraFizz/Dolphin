@@ -1,5 +1,27 @@
 # Dolphin
 
-`ssh-keygen`
-`cat ~/.ssh/id_rsa.pub`
-Add the above output to: https://github.com/settings/keys
+For private repositories, make sure your server has access to it by following these three steps:
+  1. `ssh-keygen`
+  2. `cat ~/.ssh/id_rsa.pub`
+  3. Add the above output to: https://github.com/settings/keys
+
+In order for Dolphin to work properly with your Node.JS application, you will need to have these three files in the root directory:
+  * Dockerfile
+  * database.sql
+  * config.yml
+
+`database.sql` and `config.yml` are optional
+
+Sample Dockerfile
+```
+FROM node:carbon
+WORKDIR /usr/src/app
+COPY package.json .
+
+RUN apt-get update && \
+    npm install --production
+
+COPY . .
+EXPOSE 80
+CMD ["npm", "start"]
+```
