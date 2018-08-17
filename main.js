@@ -131,8 +131,7 @@ function Help(command){
 
 /**************************************** UTILITY FUNCTIONS ***************************************/
 function RunCommand(command, flavorText = null){
-  if(flavorText)
-    console.log();
+  if(flavorText) console.log(flavorText);
 
   var array = command.split(" ");
   var cmd   = array[0];
@@ -380,7 +379,7 @@ function Initialize(dockerStackName){
 }
 
 function Nconf(serviceName, urlDomain, port){
-  console.log("Creating basic NGINX config file:", serviceName);
+  console.log(`Creating basic NGINX config file: ${serviceName}`);
 
   var fileName = `nginx_conf.d/${serviceName}.conf`;
   var serverName;
@@ -416,14 +415,11 @@ function Nconf(serviceName, urlDomain, port){
 
   for(var i = 0; i < lines.length; i++)
     fs.appendFileSync(fileName, lines[i] + "\n");
-
-  console.log("Complete!");
 }
 
 function DeployDockerStack(dockerStack){
-  console.log("Deploying to stack:", dockerStack);
-  var spawn = RunCommand(`docker stack deploy -c docker-compose.yml ${dockerStack}`);
-  console.log("Complete!");
+  return RunCommand(`docker stack deploy -c docker-compose.yml ${dockerStack}`, `Deploying to stack: ${dockerStack}`);
+  ;
 }
 
 function ConfigureMySqlContainer(dbUsername, dbPassword){
@@ -495,7 +491,7 @@ function BuildDockerImage(serviceName, repoName){
 }
 
 function AddServiceToDockerCompose(serviceName){
-  console.log("Adding service to Docker compose...");
+  console.log("Adding service to Docker compose");
 
   var doc = yaml.safeLoad(fs.readFileSync("docker-compose.yml", "utf-8"));
 
@@ -508,7 +504,6 @@ function AddServiceToDockerCompose(serviceName){
 
   doc["services"][serviceName] = newService;
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(doc), "utf-8");
-  console.log("Complete!");
 }
 
 function GenerateNginxConfForSSL(serviceName, urlDomain){
@@ -612,6 +607,11 @@ function CreateDatabase(repoName){
 
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(mysqlContainerId, commands[i]);
+}
+
+function UpdateNginx(){
+  RunCommand(`docker service update dolphin_nginx`, `Updating NGINX`);
+  ;
 }
 
 function VerifyIntegrity(){
@@ -776,7 +776,8 @@ wizard = function(args){return new Promise((done) => {
   AddServiceToDockerCompose(serviceName);
   Nconf(serviceName, urlDomain, "80");
   DeployDockerStack(dockerStackName);
-  RunCommand(`docker service update dolphin_nginx`);
+  UpdateNginx();
+  console.log("COMPLETE!");
 
   done();
 })}
