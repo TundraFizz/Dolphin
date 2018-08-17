@@ -86,6 +86,10 @@ var stuff = {
   "z": {
     "helpText": "??????????",
     "commands": null
+  },
+  "initialize": {
+    "helpText": "??????????",
+    "commands": null
   }
 };
 
@@ -314,49 +318,6 @@ function CreateBaseDockerCompose(){
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(dockerCompose), "utf-8");
   console.log("Complete!");
 }
-
-function VerifyIntegrity(){
-  // This is important because whenever you're deploying a new application,
-  // you must make sure that all the base containers are successfully running.
-  // This includes NGINX, MySQL, and phpMyAdmin
-  var nginx      = false;
-  var mysql      = false;
-  var phpmyadmin = false;
-  var spawn      = RunCommand("docker service ls");
-  var output     = spawn.stdout.toString("utf-8").trim().split("\n");
-
-  for(var i = 0; i < output.length; i++){
-    // Remove all duplicate spaces, because otherwise the .split function below won't work
-    // Matches a "space" character (match 1 or more of the preceding token)
-    var line = output[i].replace(/ +/g, " ");
-
-    // There are six attributes for each service delimited by spaces:
-    // Service ID, Name, Mode, Replicas, Image, Ports
-    // I only care about the Name and Replicas, so extract those
-    var serviceName     = line.split(" ")[1];
-    var serviceReplicas = line.split(" ")[3];
-
-    // Extract the first value from serviceReplicas: 1/1
-    serviceReplicas = serviceReplicas.split("/")[0];
-
-    if(serviceName.indexOf("nginx")      > -1) nginx      = true;
-    if(serviceName.indexOf("mysql")      > -1) mysql      = true;
-    if(serviceName.indexOf("phpmyadmin") > -1) phpmyadmin = true;
-
-    if(serviceName.indexOf("nginx")      > -1 ||
-       serviceName.indexOf("mysql")      > -1 ||
-       serviceName.indexOf("phpmyadmin") > -1){
-
-      if(serviceReplicas.indexOf("0") > -1)
-       return false;
-    }
-  }
-
-  if(!nginx || !mysql || !phpmyadmin)
-    return false;
-
-  return true;
-}
 /**************************************************************************************************/
 
 /**************************************** HELPER FUNCTIONS ****************************************/
@@ -365,7 +326,6 @@ function Initialize(dockerStackName){
     return;
 
   console.log("Starting initialization...");
-
   console.log("Creating directory mysql-custom-image...");
   RunCommand("mkdir mysql-custom-image");
 
@@ -536,7 +496,7 @@ function BuildDockerImage(serviceName, repoName){
 }
 
 function AddServiceToDockerCompose(serviceName){
-  console.log("Testing...");
+  console.log("Adding service to Docker compose...");
 
   var doc = yaml.safeLoad(fs.readFileSync("docker-compose.yml", "utf-8"));
 
@@ -658,6 +618,59 @@ function CreateDatabase(repoName){
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(mysqlContainerId, commands[i]);
 }
+
+function VerifyIntegrity(){
+  // This is important because whenever you're deploying a new application,
+  // you must make sure that all the base containers are successfully running.
+  // This includes NGINX, MySQL, and phpMyAdmin
+  var nginx      = false;
+  var mysql      = false;
+  var phpmyadmin = false;
+  var spawn      = RunCommand("docker service ls");
+  var output     = spawn.stdout.toString("utf-8").trim().split("\n");
+
+  for(var i = 0; i < output.length; i++){
+    // Remove all duplicate spaces, because otherwise the .split function below won't work
+    // Matches a "space" character (match 1 or more of the preceding token)
+    var line = output[i].replace(/ +/g, " ");
+
+    // There are six attributes for each service delimited by spaces:
+    // Service ID, Name, Mode, Replicas, Image, Ports
+    // I only care about the Name and Replicas, so extract those
+    var serviceName     = line.split(" ")[1];
+    var serviceReplicas = line.split(" ")[3];
+
+    // Extract the first value from serviceReplicas: 1/1
+    serviceReplicas = serviceReplicas.split("/")[0];
+
+    if(serviceName.indexOf("nginx")      > -1) nginx      = true;
+    if(serviceName.indexOf("mysql")      > -1) mysql      = true;
+    if(serviceName.indexOf("phpmyadmin") > -1) phpmyadmin = true;
+
+    if(serviceName.indexOf("nginx")      > -1 ||
+       serviceName.indexOf("mysql")      > -1 ||
+       serviceName.indexOf("phpmyadmin") > -1){
+
+      if(serviceReplicas.indexOf("0") > -1)
+       return false;
+    }
+  }
+
+  // It's okay if all or none of the services are running, but let the user know if there's exactly 1 or 2 running
+  if(nginx + mysql + phpmyadmin == 1 || nginx + mysql + phpmyadmin == 2){
+    console.log("========== WARNING ==========");
+    console.log("The main services are only partly-deployed");
+    if(nginx)      console.log("NGINX      | Running"); else console.log("NGINX      | Dead");
+    if(mysql)      console.log("MySQL      | Running"); else console.log("MySQL      | Dead");
+    if(phpmyadmin) console.log("phpMyAdmin | Running"); else console.log("phpMyAdmin | Dead");
+    return false;
+  }
+
+  if(!nginx || !mysql || !phpmyadmin)
+    return false;
+
+  return true;
+}
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
@@ -670,14 +683,14 @@ z = function(args){return new Promise((done) => {
   // This is used for custom tests to debug
   // CreateDatabase("Coss-Stats");
 
-  var dockerStackName = "muh-stack";
+  var dockerStackName = "dolphin";
   var repoUrl         = "git@github.com:TundraFizz/Coss-Stats.git";
   var repoName        = "Coss-Stats";
   var serviceName     = "coss-stats";
   var urlDomain       = "coss-stats.io";
 
   console.log("==================================================");
-  console.log(`dockerStackName | ${dockerStackName}`); // muh-stack
+  console.log(`dockerStackName | ${dockerStackName}`); // dolphin
   console.log(`repoUrl         | ${repoUrl}`);         // git@github.com:TundraFizz/Coss-Stats.git
   console.log(`repoName        | ${repoName}`);        // Coss-Stats
   console.log(`serviceName     | ${serviceName}`);     // coss-stats
@@ -694,7 +707,7 @@ z = function(args){return new Promise((done) => {
   AddServiceToDockerCompose(serviceName);
   Nconf(serviceName, urlDomain, "80");
   DeployDockerStack(dockerStackName);
-  RunCommand(`docker service update muh-stack_nginx`);
+  RunCommand(`docker service update dolphin_nginx`);
   done();
 })}
 
@@ -726,39 +739,45 @@ remove_service = function(args){return new Promise((done) => {
   done();
 })}
 
+initialize = function(args){return new Promise((done) => {
+  var dockerStackName = "dolphin";
+
+  if(VerifyIntegrity()){
+    console.log("Dolphin is already initialized");
+  }else{
+    Initialize(dockerStackName);
+    Nconf("phpmyadmin", null, "9000");
+    DeployDockerStack(dockerStackName);
+  }
+
+  done();
+})}
+
 wizard = function(args){return new Promise((done) => {
   // wizard -r https://github.com/TundraFizz/Docker-Sample-App -u mudki.ps
   // wizard -r https://github.com/TundraFizz/Coss-Stats -u coss-stats.io
   // wizard -r git@github.com:TundraFizz/Coss-Stats.git -u coss-stats.io
 
-  var dockerStackName = "muh-stack";
+  if(!VerifyIntegrity()){
+    console.log("Dolphin isn't initialized, run this command first: initialize");
+    done();
+    return;
+  }
+
+  if(!fs.existsSync("docker-compose.yml")){
+    console.log("No docker-compose.yml file found, aborting");
+    done();return;
+  }
+
+  var dockerStackName = "dolphin";
   var repoUrl     = (typeof(args["-r"]) === "string" ? args["-r"] : null);
   var urlDomain   = (typeof(args["-u"]) === "string" ? args["-u"] : null);
   var repoName    = "";
   var serviceName = "";
 
-  if(!fs.existsSync("docker-compose.yml")){
-    Initialize(dockerStackName);
-    Nconf("phpmyadmin", null, "9000");
-    DeployDockerStack(dockerStackName);
-
-    if("--init" in args){
-      console.log("ONLY initialize this");
-      done();return;
-    }
-  }
-
-  // Wait until the NGINX, MySQL, and phpMyAdmin containers are all running
-  var vi = 0;
-  while(VerifyIntegrity() == false){
-    if(vi++ == 0) console.log("Waiting for NGINX, MySQL, and phpMyAdmin");
-    RunCommand("sleep 1");
-  }
-
-  if(vi) console.log("NGINX, MySQL, and phpMyAdmin are now running");
-
   if(!repoUrl || !urlDomain){
-    console.log("Missing arguments");
+    if(!repoUrl)   console.log("Missing argument: -r");
+    if(!urlDomain) console.log("Missing argument: -u");
     done();return;
   }
 
@@ -779,7 +798,7 @@ wizard = function(args){return new Promise((done) => {
   serviceName = repoName.toLowerCase();
 
   console.log("==================================================");
-  console.log(`dockerStackName | ${dockerStackName}`); // muh-stack
+  console.log(`dockerStackName | ${dockerStackName}`); // dolphin
   console.log(`repoUrl         | ${repoUrl}`);         // git@github.com:TundraFizz/Coss-Stats.git
   console.log(`repoName        | ${repoName}`);        // Coss-Stats
   console.log(`serviceName     | ${serviceName}`);     // coss-stats
@@ -796,7 +815,7 @@ wizard = function(args){return new Promise((done) => {
   AddServiceToDockerCompose(serviceName);
   Nconf(serviceName, urlDomain, "80");
   DeployDockerStack(dockerStackName);
-  RunCommand(`docker service update muh-stack_nginx`);
+  RunCommand(`docker service update dolphin_nginx`);
 
   done();
 })}
@@ -913,7 +932,8 @@ view_all = function(args){return new Promise((done) => {
 })}
 
 ssl = function(args){return new Promise((done) => {
-  var urlDomain = "coss-stats.io";
+  var serviceName = "coss-stats";
+  var urlDomain   = "coss-stats.io";
   var containerId = GetDockerContainerIdFromImageName("nginx");
 
   // The NGINX container wasn't found
@@ -926,13 +946,14 @@ ssl = function(args){return new Promise((done) => {
   console.log("Creating an SSL certificate");
 
   /* docker run -it --rm --name certbot                      \
-     -v muh-stack_ssl:/etc/letsencrypt                       \
-     -v muh-stack_ssl_challenge:/ssl_challenge               \
+     -v dolphin_ssl:/etc/letsencrypt                         \
+     -v dolphin_ssl_challenge:/ssl_challenge                 \
      certbot/certbot certonly                                \
      --register-unsafely-without-email --webroot --agree-tos \
-     -w /ssl_challenge --staging -d mudki.ps */
+     -w /ssl_challenge --staging -d mudki.ps                */
 
-  var spawn = RunCommand(`docker run -i --rm --name certbot -v muh-stack_ssl:/etc/letsencrypt -v muh-stack_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`);
+  var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`;
+  var spawn = RunCommand(hugeCommand);
 
   console.log("=== OUT ===================================================");
   if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
@@ -941,7 +962,7 @@ ssl = function(args){return new Promise((done) => {
   console.log("===========================================================");
 
   // Generate a new Nginx config file for the service
-  GenerateNginxConfForSSL("coss-stats", "coss-stats.io");
+  GenerateNginxConfForSSL(serviceName, urlDomain);
 
   // Restart the NGINX container
   RunCommand(`docker container restart ${containerId}`);
