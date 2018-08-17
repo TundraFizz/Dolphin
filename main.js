@@ -674,34 +674,6 @@ z = function(args){return new Promise((done) => {
   return;
 })}
 
-remove_service = function(args){return new Promise((done) => {
-  if(!("-r" in args)){
-    console.log("Repository name isn't given");
-    done();return;
-  }
-
-  var repoName    = args["-r"];
-  var serviceName = repoName.toLowerCase();
-  var serviceId   = GetDockerServiceIdFromImageName(serviceName);
-  var imageId     = GetDockerImageIdFromImageName  (serviceName);
-
-  console.log("==================================================");
-  console.log(`repoName    | ${repoName}`);
-  console.log(`serviceName | ${serviceName}`);
-  console.log(`serviceId   | ${serviceId}`);
-  console.log(`imageId     | ${imageId}`);
-  console.log("==================================================");
-  console.log();
-
-  RunCommand(`docker service rm ${serviceId}`);
-  RunCommand(`docker image rm ${imageId}`);
-  RunCommand(`rm -rf ${repoName}`);
-  RunCommand(`rm nginx_conf.d/${serviceName}.conf`);
-  // Edit the file docker-compose.yml
-
-  done();
-})}
-
 initialize = function(args){return new Promise((done) => {
   var dockerStackName = "dolphin";
 
@@ -777,6 +749,34 @@ wizard = function(args){return new Promise((done) => {
   DeployDockerStack(dockerStackName);
   UpdateNginx();
   console.log("COMPLETE!");
+
+  done();
+})}
+
+remove_service = function(args){return new Promise((done) => {
+  if(!("-r" in args)){
+    console.log("Repository name isn't given");
+    done();return;
+  }
+
+  var repoName    = args["-r"];
+  var serviceName = repoName.toLowerCase();
+  var serviceId   = GetDockerServiceIdFromImageName(serviceName);
+  var imageId     = GetDockerImageIdFromImageName  (serviceName);
+
+  console.log("==================================================");
+  console.log(`repoName    | ${repoName}`);
+  console.log(`serviceName | ${serviceName}`);
+  console.log(`serviceId   | ${serviceId}`);
+  console.log(`imageId     | ${imageId}`);
+  console.log("==================================================");
+  console.log();
+
+  RunCommand(`docker service rm ${serviceId}`);
+  RunCommand(`docker image rm ${imageId}`);
+  RunCommand(`rm -rf ${repoName}`);
+  RunCommand(`rm nginx_conf.d/${serviceName}.conf`);
+  // Edit the file docker-compose.yml
 
   done();
 })}
