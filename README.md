@@ -7,8 +7,8 @@ For private repositories, make sure your server has access to it by following th
 
 In order for Dolphin to work properly with your Node.JS application, you will need to have these three files in the root directory:
   * Dockerfile
-  * database.sql
   * config.yml
+  * database.sql
 
 `database.sql` and `config.yml` are optional
 
