@@ -4,6 +4,10 @@ var readline    = require("readline");
 var {spawnSync} = require("child_process");
 const SINGLE_FILES_SHA1   = "C18FB5C7A6266BA182A0BEE66E7538A89400D48A";
 const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/temp.tar.gz";
+const CYAN  = "\x1b[36m";
+const GREEN = "\x1b[32m";
+const RED   = "\x1b[31m";
+const RESET = "\x1b[0m";
 
 /* Commands are an array of objects [
   usage     : STRING,
@@ -11,11 +15,6 @@ const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/temp.tar.gz";
   options   : OBJECT,
   flags     : OBJECT,
   examples  : ARRAY]    */
-
-/* Example stuff
-  var spawn = RunCommand("tar -cf temp.tar single_files");
-  if(spawn.stdout.length) console.log("OUT:", spawn.stdout.toString("utf-8"));
-  if(spawn.stderr.length) console.log("ERR:", spawn.stderr.toString("utf-8")); */
 
 var stuff = {
   "initialize": {
@@ -86,6 +85,10 @@ var stuff = {
   "quit": {
     "helpText": "Quits the program",
     "commands": null
+  },
+  "z": {
+    "helpText": "zzzzzzzzzzzzzzzzzz",
+    "commands": null
   }
 };
 
@@ -127,7 +130,10 @@ function Help(command){
 
 /**************************************** UTILITY FUNCTIONS ***************************************/
 function RunCommand(command, flavorText = null){
-  if(flavorText) console.log(flavorText);
+  var out = [];
+  var err = null;
+
+  if(flavorText) console.log(`${CYAN}${flavorText}${RESET}`);
 
   var array = command.split(" ");
   var cmd   = array[0];
@@ -136,7 +142,15 @@ function RunCommand(command, flavorText = null){
   for(var i = 1; i < array.length; i++)
     args.push(array[i]);
 
-  return spawnSync(cmd, args);
+  var spawn = spawnSync(cmd, args);
+
+  if(spawn.stdout.length) out = spawn.stdout.toString("utf-8").trim().split("\n");
+  if(spawn.stderr.length) err = spawn.stderr.toString("utf-8").trim().split("\n");
+
+  return {
+    "out": out,
+    "err": err
+  };
 }
 
 function RunCommandInDockerContainer(container, command){
@@ -160,7 +174,7 @@ function RunCommandInDockerContainer(container, command){
 function GetDockerContainerIdFromImageName(name){
   // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
   var spawn  = RunCommand("docker container ls");
-  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var output = spawn["out"].split("\n");
   var containers = [];
 
   // Search through all containers
@@ -191,7 +205,7 @@ function GetDockerContainerIdFromImageName(name){
 function GetDockerServiceIdFromImageName(name){
   // Get the output of all containers (docker service ls), trim the string (remove spaces/newlines from ends), and split it by newline
   var spawn  = RunCommand("docker service ls");
-  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var output = spawn["out"].split("\n");
   var containers = [];
 
   // Search through all containers
@@ -222,7 +236,7 @@ function GetDockerServiceIdFromImageName(name){
 function GetDockerImageIdFromImageName(name){
   // Get the output of all containers (docker image ls), trim the string (remove spaces/newlines from ends), and split it by newline
   var spawn  = RunCommand("docker image ls");
-  var output = spawn.stdout.toString("utf-8").trim().split("\n");
+  var output = spawn["out"].split("\n");
   var containers = [];
 
   // Search through all containers
@@ -316,16 +330,16 @@ function CreateBaseDockerCompose(){
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(dockerCompose), "utf-8");
   console.log("Complete!");
 }
+
+Array.prototype.Display = function(){
+  for(var i = 0; i < this.length; i++)
+    console.log(this[i]);
+};
 /**************************************************************************************************/
 
 /**************************************** HELPER FUNCTIONS ****************************************/
-function Initialize(dockerStackName){
-  if(fs.existsSync("docker-compose.yml"))
-    return;
-
-  console.log("Starting initialization...");
-  console.log("Creating directory mysql-custom-image...");
-  RunCommand("mkdir mysql-custom-image");
+Initialize = function(dockerStackName){return new Promise((done, err) => {
+  RunCommand("mkdir mysql-custom-image", "Creating directory mysql-custom-image");
 
   // Create a temporary Dockerfile for a custom MySQL image that will update itself and install the following:
   // - nano
@@ -335,10 +349,8 @@ function Initialize(dockerStackName){
   customMySqlDockerfile += "RUN apt-get update && apt-get install -y nano && apt-get install -y python-pip && pip install -q awscli\n";
   fs.writeFileSync("mysql-custom-image/Dockerfile", customMySqlDockerfile, "utf-8");
 
-  console.log("Building the custom MySQL image");
-  RunCommand("docker build -t mysql-custom mysql-custom-image");
-  console.log("Removing stuff");
-  RunCommand("rm -rf mysql-custom-image");
+  RunCommand("docker build -t mysql-custom mysql-custom-image", "Building the custom MySQL image");
+  RunCommand("rm -rf mysql-custom-image", "Removing directory mysql-custom-image");
 
   if(!fs.existsSync("docker-compose.yml")) CreateBaseDockerCompose();
   if(!fs.existsSync("logs"))               fs.mkdirSync("logs");
@@ -347,41 +359,39 @@ function Initialize(dockerStackName){
 
   // Get all files in single_files
 
-  var createTar = RunCommand("tar -cf temp.tar single_files");
-  if(createTar.stderr.length) console.log("ERR:", createTar.stderr.toString("utf-8"));
+  var createTar = RunCommand("tar -cf temp.tar single_files", "Creating temporary archive of single_files");
+  if(createTar["err"]) err(createTar["err"]);
 
-  var getSha1 = RunCommand("sha1sum temp.tar");
-  if(getSha1.stderr.length) console.log("ERR:", getSha1.stderr.toString("utf-8"));
+  var getSha1 = RunCommand("sha1sum temp.tar", "Getting SHA1 of the temporary archive");
+  if(getSha1["err"]) err(getSha1["err"]);
 
-  var removeTar = RunCommand("rm temp.tar");
-  if(removeTar.stderr.length) console.log("ERR:", removeTar.stderr.toString("utf-8"));
+  var removeTar = RunCommand("rm temp.tar", "Removing temporary archive of single_files");
+  if(removeTar["err"]) err(removeTar["err"]);
 
-  // Extract the hash
-  if(getSha1.stdout.length){
-    var checksum = getSha1.stdout.toString("utf-8").split(" ")[0];
+  // Extract the SHA1 hash
+  var checksum = getSha1["out"][0];
 
-    if(checksum == SINGLE_FILES_SHA1){
-      console.log("Checksum passed");
-    }else{
-      console.log("Checksum failed");
-      RunCommand("rm -rf single_files");
-      RunCommand(`wget -O temp.tar.gz ${SINGLE_FILES_TAR_GZ}`);
-      RunCommand("tar -xzf temp.tar.gz");
-      RunCommand("rm temp.tar.gz");
-    }
+  if(checksum == SINGLE_FILES_SHA1){
+    console.log("SHA1 validated");
   }else{
-    console.log("Checksum not found");
+    console.log("SHA1 failed validation");
+    RunCommand("rm -rf single_files", "Removing directory single_files");
+    RunCommand(`wget -O temp.tar.gz ${SINGLE_FILES_TAR_GZ}`, "Downloading .tar.gz of single_files");
+    RunCommand("tar -xzf temp.tar.gz", "Extracting .tar.gz of single_files");
+    RunCommand("rm temp.tar.gz", "Removing .tar.gz of single_files");
   }
-}
 
-function Nconf(serviceName, urlDomain, port){
+  done();
+})}
+
+Nconf = function(serviceName, urlDomain, port){return new Promise((done, err) => {
   console.log(`Creating basic NGINX config file: ${serviceName}`);
 
   var fileName = `nginx_conf.d/${serviceName}.conf`;
   var serverName;
 
   if(urlDomain == null){
-    urlDomain = RunCommand("curl https://api.ipify.org").stdout.toString("utf-8");
+    urlDomain = RunCommand("curl https://api.ipify.org")["out"];
     serverName = urlDomain;
   }else{
     serverName = `${urlDomain} www.${urlDomain}`;
@@ -411,14 +421,20 @@ function Nconf(serviceName, urlDomain, port){
 
   for(var i = 0; i < lines.length; i++)
     fs.appendFileSync(fileName, lines[i] + "\n");
-}
 
-function DeployDockerStack(dockerStack){
-  return RunCommand(`docker stack deploy -c docker-compose.yml ${dockerStack}`, `Deploying to stack: ${dockerStack}`);
-  ;
-}
+  done();
+})}
 
-function ConfigureMySqlContainer(dbUsername, dbPassword){
+DeployDockerStack = function(dockerStack){return new Promise((done, err) => {
+  var res = RunCommand(`docker stack deploy -c docker-compose.yml ${dockerStack}`, `Deploying to stack: ${dockerStack}`);
+
+  if(res["out"]) res["out"].Display();
+  if(res["err"]) err(res["err"]);
+
+  done();
+})}
+
+ConfigureMySqlContainer = function(dbUsername, dbPassword){return new Promise((done, err) => {
   var attempts = 1;
   var mysqlContainerId = null;
 
@@ -463,14 +479,18 @@ function ConfigureMySqlContainer(dbUsername, dbPassword){
 
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(mysqlContainerId, commands[i]);
-}
+})}
 
-function CloneRepository(repoUrl){
-  return RunCommand(`git clone ${repoUrl}`, `Cloning repository: ${repoUrl}`);
-  ;
-}
+CloneRepository = function(repoUrl){return new Promise((done, err) => {
+  var res = RunCommand(`git clone ${repoUrl}`, `Cloning repository: ${repoUrl}`);
 
-function ConfigureSettings(repoName){
+  if(res["out"]) res["out"].Display();
+  if(res["err"]) err(res["err"]);
+
+  done();
+})}
+
+ConfigureSettings = function(repoName){return new Promise((done, err) => {
   var configPath = `${repoName}/config.yml`;
 
   // Skip this if there's no config.yml file
@@ -479,14 +499,14 @@ function ConfigureSettings(repoName){
 
   console.log("Configuring settings:", repoName);
   var spawn = spawnSync("nano", [configPath], {"stdio": "inherit", "detached": true});
-}
+})}
 
-function BuildDockerImage(serviceName, repoName){
+BuildDockerImage = function(serviceName, repoName){return new Promise((done, err) => {
   return spawn = RunCommand(`docker build -t ${serviceName} ${repoName}`, `Building Docker image "${repoName}" into service "${serviceName}"`);
   ;
-}
+})}
 
-function AddServiceToDockerCompose(serviceName){
+AddServiceToDockerCompose = function(serviceName){return new Promise((done, err) => {
   console.log("Adding service to Docker compose");
 
   var doc = yaml.safeLoad(fs.readFileSync("docker-compose.yml", "utf-8"));
@@ -500,9 +520,9 @@ function AddServiceToDockerCompose(serviceName){
 
   doc["services"][serviceName] = newService;
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(doc), "utf-8");
-}
+})}
 
-function GenerateNginxConfForSSL(serviceName, urlDomain){
+AddServiceToDockerCompose = function(serviceName){return new Promise((done, err) => {
   var lines = [
     `upstream ${serviceName} {`                                                                                          ,
     `  server ${serviceName};`                                                                                           ,
@@ -554,9 +574,9 @@ function GenerateNginxConfForSSL(serviceName, urlDomain){
 
   for(var i = 0; i < lines.length; i++)
     fs.appendFileSync(fileName, lines[i] + "\n");
-}
+})}
 
-function CreateDatabase(repoName){
+CreateDatabase = function(repoName){return new Promise((done, err) => {
   // A file named "database.sql" should be put into the repository so it can be found here
   // Improve this later
   var dbName       = "coss";
@@ -603,12 +623,12 @@ function CreateDatabase(repoName){
 
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(mysqlContainerId, commands[i]);
-}
+})}
 
-function UpdateNginx(){
+UpdateNginx = function(){return new Promise((done, err) => {
   RunCommand(`docker service update dolphin_nginx`, `Updating NGINX`);
   ;
-}
+})}
 
 function VerifyIntegrity(){
   // This is important because whenever you're deploying a new application,
@@ -617,8 +637,7 @@ function VerifyIntegrity(){
   var nginx      = false;
   var mysql      = false;
   var phpmyadmin = false;
-  var spawn      = RunCommand("docker service ls");
-  var output     = spawn.stdout.toString("utf-8").trim().split("\n");
+  var output     = RunCommand("docker service ls")["out"];
 
   for(var i = 0; i < output.length; i++){
     // Remove all duplicate spaces, because otherwise the .split function below won't work
@@ -665,18 +684,42 @@ function VerifyIntegrity(){
 /**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
+
+z = function(args){return new Promise((done) => {
+  var repoUrl = "git@github.com:TundraFizz/Coss-Stats.git";
+
+  CloneRepository(repoUrl)
+  .then(() => {
+    console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
+    done();
+  })
+  .catch((err) => {
+    console.log(`${RED}===================== ERROR ======================${RESET}`);
+    console.log(err);
+    done();
+  });
+})}
+
 initialize = function(args){return new Promise((done) => {
   var dockerStackName = "dolphin";
 
   if(VerifyIntegrity()){
     console.log("Dolphin is already initialized");
+    done();
   }else{
-    Initialize(dockerStackName);
-    Nconf("phpmyadmin", null, "9000");
-    DeployDockerStack(dockerStackName);
+    Initialize(dockerStackName)
+    .then(Nconf("phpmyadmin", null, "9000"))
+    .then(DeployDockerStack(dockerStackName))
+    .then(() => {
+      console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
+      done();
+    })
+    .catch((err) => {
+      console.log(`${RED}===================== ERROR ======================${RESET}`);
+      console.log(err);
+      done();
+    });
   }
-
-  done();
 })}
 
 wizard = function(args){return new Promise((done) => {
@@ -731,17 +774,23 @@ wizard = function(args){return new Promise((done) => {
   console.log(`urlDomain       | ${urlDomain}`);       // coss-stats.io
   console.log("==================================================");
 
-  CloneRepository(repoUrl);
-  ConfigureSettings(repoName);
-  CreateDatabase(repoName);
-  BuildDockerImage(serviceName, repoName);
-  AddServiceToDockerCompose(serviceName);
-  Nconf(serviceName, urlDomain, "80");
-  DeployDockerStack(dockerStackName);
-  UpdateNginx();
-  console.log("COMPLETE!");
-
-  done();
+  CloneRepository(repoUrl)
+  .then(ConfigureSettings(repoName))
+  .then(CreateDatabase(repoName))
+  .then(BuildDockerImage(serviceName, repoName))
+  .then(AddServiceToDockerCompose(serviceName))
+  .then(Nconf(serviceName, urlDomain, "80"))
+  .then(DeployDockerStack(dockerStackName))
+  .then(UpdateNginx())
+  .then(() => {
+    console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
+    done();
+  })
+  .catch((err) => {
+    console.log(`${RED}===================== ERROR ======================${RESET}`);
+    console.log(err);
+    done();
+  });
 })}
 
 remove_service = function(args){return new Promise((done) => {
@@ -783,63 +832,35 @@ nuke_everything = function(args){return new Promise((done) => {
   // Every directory that's a repository
 
   // Run the commands to get the lists of Docker services and images
-  var listOfServices = RunCommand("docker service ls -q");
-  var listOfImages   = RunCommand("docker images -q");
+  var listOfServices = RunCommand("docker service ls -q")["out"];
+  var listOfImages   = RunCommand("docker images -q")["out"];
 
-  // From the above commands, convert the stdout buffer into a utf-8 string
-  // Then split that string of IDs into an array for each of them
-  listOfServices = listOfServices.stdout.toString("utf-8").trim().split("\n");
-  listOfImages   = listOfImages.stdout.toString("utf-8").trim().split("\n");
+  if(listOfServices.length)
+    for(var i = 0; i < listOfServices.length; i++)
+      if(listOfServices[i])
+        RunCommand(`docker service rm ${listOfServices[i]}`,`Killed Service: ${listOfServices[i]}`);
 
-  for(var i = 0; i < listOfServices.length; i++){
-    if(listOfServices[i]){
-      RunCommand(`docker service rm ${listOfServices[i]}`);
-      console.log("KILLED SERVICE:", listOfServices[i]);
+  if(listOfImages.length){
+    // Some images rely on others, so continuously repeat this loop until all images have been removed
+    while(true){
+      // Get the current images and break out of the while loop if there's no more
+      listOfImages = RunCommand("docker images -q")["out"];
+      if(listOfImages.length == 0)
+        break;
+
+      for(var i = 0; i < listOfImages.length; i++)
+        if(listOfImages[i])
+          var spawn = RunCommand(`docker rmi -f ${listOfImages[i]}`, `Deleted Image: ${listOfImages[i]}`);
     }
   }
 
-  // Some images rely on others, so continuously repeat this loop until all images have been removed
-  while(true){
-    var listOfImages = RunCommand("docker images -q");
-    listOfImages = listOfImages.stdout.toString("utf-8").trim().split("\n");
+  RunCommand("docker system prune -f", "Systems Pruned");
+  RunCommand("docker volume prune -f", "Volumes Pruned");
 
-    // If index zero of listOfImages is blank, then all images have been removed
-    if(listOfImages[0] == "")
-      break;
-
-    for(var i = 0; i < listOfImages.length; i++){
-      if(listOfImages[i]){
-        var spawn = RunCommand(`docker rmi -f ${listOfImages[i]}`);
-        if(spawn.stdout.length) console.log("DELETED IMAGE: ", listOfImages[i]);
-      }
-    }
-  }
-
-  RunCommand("docker system prune -f");
-  console.log("SYSTEMS PRUNED");
-
-  RunCommand("docker volume prune -f");
-  console.log("VOLUMES PRUNED");
-
-  if(fs.existsSync("docker-compose.yml")){
-    RunCommand("rm docker-compose.yml");
-    console.log("DELETED FILE:  ", "docker-compose.yml");
-  }
-
-  if(fs.existsSync("logs")){
-    RunCommand("rm -rf logs");
-    console.log("DELETED DIR:   ", "logs");
-  }
-
-  if(fs.existsSync("nginx_conf.d")){
-    RunCommand("rm -rf nginx_conf.d");
-    console.log("DELETED DIR:   ", "nginx_conf.d");
-  }
-
-  if(fs.existsSync("single_files")){
-    RunCommand("rm -rf single_files");
-    console.log("DELETED DIR:   ", "single_files");
-  }
+  if(fs.existsSync("docker-compose.yml")) RunCommand("rm docker-compose.yml", "Deleted File:   docker-compose.yml");
+  if(fs.existsSync("logs"))               RunCommand("rm -rf logs",           "Deleted Dir:    logs");
+  if(fs.existsSync("nginx_conf.d"))       RunCommand("rm -rf nginx_conf.d",   "Deleted Dir:    nginx_conf.d");
+  if(fs.existsSync("single_files"))       RunCommand("rm -rf single_files",   "Deleted Dir:    single_files");
 
   // Get all directories that exist in the current working directory,
   // and delete all directories that are considered repositories (contain a Dockerfile)
@@ -849,14 +870,13 @@ nuke_everything = function(args){return new Promise((done) => {
 
   for(var i = 0; i < listOfDirectories.length; i++){
     var fileList = RunCommand(`ls ${listOfDirectories[i]}`);
-    fileList = fileList.stdout.toString("utf-8").trim().split("\n");
+    fileList = fileList["out"];
 
-    if(fileList.indexOf("Dockerfile") > -1){
-      RunCommand(`rm -rf ${listOfDirectories[i]}`);
-      console.log("DELETED DIR:   ", listOfDirectories[i]);
-    }
+    if(fileList.indexOf("Dockerfile") > -1)
+      RunCommand(`rm -rf ${listOfDirectories[i]}`, `Deleted Dir:    ${listOfDirectories[i]}`);
   }
 
+  console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
   done();
 })}
 
@@ -866,19 +886,19 @@ view_all = function(args){return new Promise((done) => {
   RunCommand("clear");
 
   spawn = RunCommand("docker stack ls");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  if(spawn["out"]) spawn["out"].Display();
 
   spawn = RunCommand("docker service ls");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  if(spawn["out"]) spawn["out"].Display();
 
   spawn = RunCommand("docker container ls");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  if(spawn["out"]) spawn["out"].Display();
 
   spawn = RunCommand("docker container ls");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  if(spawn["out"]) spawn["out"].Display();
 
   spawn = RunCommand("docker volume ls");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  if(spawn["out"]) spawn["out"].Display();
 
   done();
 })}
@@ -908,9 +928,9 @@ ssl = function(args){return new Promise((done) => {
   var spawn = RunCommand(hugeCommand);
 
   console.log("=== OUT ===================================================");
-  if(spawn.stdout.length) console.log(spawn.stdout.toString("utf-8"));
+  if(spawn.stdout.length) console.log(spawn["out"]);
   console.log("=== ERR ===================================================");
-  if(spawn.stderr.length) console.log(spawn.stderr.toString("utf-8"));
+  if(spawn.stderr.length) console.log(spawn["out"]);
   console.log("===========================================================");
 
   // Generate a new Nginx config file for the service
@@ -1015,7 +1035,7 @@ restore_database = function(args){return new Promise((done) => {
     // A list of files will be returned in alphanumeric order. This means that the most
     // recent MySQL backup file will be at the end. Trim the string to remove newlines,
     // split the string by newline, and pop the final result
-    fileName = spawn.stdout.toString("utf-8").trim().split("\n").pop();
+    fileName = spawn["out"].split("\n").pop();
 
     // The result will be something like this:
     // 2018-08-10 21:14:19     4992     mysql-backup-2018-08-10T21-14-17.sql.gz
@@ -1140,6 +1160,7 @@ Main();
 /***** TODO *****/
 // Display text on what happens
 // Handle errors
+// remove_service
 
 // Create a zipped archive
 // tar -zcf temp.tar.gz single_files
