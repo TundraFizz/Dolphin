@@ -21,6 +21,12 @@ VerifyIntegrity [U1]
 
 === Main ===============================
 
+initialize
+ -VerifyIntegrity
+ -Initialize
+ -Nconf
+ -DeployDockerStack
+
 wizard
  -Initialize
  -Nconf
@@ -32,6 +38,7 @@ wizard
  -BuildDockerImage
  -AddServiceToDockerCompose
 
+remove_service
 nuke_everything  [U1]
 view_all         [U1]
 ssl              [U1]
