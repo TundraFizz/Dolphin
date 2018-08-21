@@ -18,11 +18,11 @@ const RESET = "\x1b[0m";
 
 var stuff = {
   "initialize": {
-    "helpText": "??????????",
+    "helpText": "Sets up NGINX, MySQL, and phpMyAdmin",
     "commands": null
   },
   "wizard": {
-    "helpText": "??????????",
+    "helpText": "Easily deploys a Node.js application",
     "commands": null
   },
   "remove_service": {
@@ -126,6 +126,12 @@ function Help(command){
     if(val.constructor === Array ) for(key in val) console.log(val[key]);
     console.log();
   }
+}
+
+/******************************************* EXTENSIONS *******************************************/
+Array.prototype.Display = function(){
+  for(var i = 0; i < this.length; i++)
+    console.log(this[i]);
 }
 
 /**************************************** UTILITY FUNCTIONS ***************************************/
@@ -330,12 +336,6 @@ function CreateBaseDockerCompose(){
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(dockerCompose), "utf-8");
   console.log("Complete!");
 }
-
-Array.prototype.Display = function(){
-  for(var i = 0; i < this.length; i++)
-    console.log(this[i]);
-};
-/**************************************************************************************************/
 
 /**************************************** HELPER FUNCTIONS ****************************************/
 Initialize = function(dockerStackName){return new Promise((done, err) => {
@@ -681,10 +681,8 @@ function VerifyIntegrity(){
 
   return true;
 }
-/**************************************************************************************************/
 
 /***************************************** MAIN FUNCTIONS *****************************************/
-
 z = function(args){return new Promise((done) => {
   var repoUrl = "git@github.com:TundraFizz/Coss-Stats.git";
 
@@ -889,9 +887,6 @@ view_all = function(args){return new Promise((done) => {
   if(spawn["out"]) spawn["out"].Display();
 
   spawn = RunCommand("docker service ls");
-  if(spawn["out"]) spawn["out"].Display();
-
-  spawn = RunCommand("docker container ls");
   if(spawn["out"]) spawn["out"].Display();
 
   spawn = RunCommand("docker container ls");
