@@ -27,3 +27,10 @@ CMD ["npm", "start"]
 # Usage
 
 `node main.js`
+
+# [Installing Node.js](https://nodejs.org/en/download/package-manager/)
+
+```
+curl --silent --location https://rpm.nodesource.com/setup_8.x | sudo bash -
+sudo yum -y install nodejs
+```
