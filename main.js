@@ -666,18 +666,10 @@ function VerifyIntegrity(){
     }
   }
 
-  // It's okay if all or none of the services are running, but let the user know if there's exactly 1 or 2 running
-  if(nginx + mysql + phpmyadmin == 1 || nginx + mysql + phpmyadmin == 2){
-    console.log("========== WARNING ==========");
-    console.log("The main services are only partly-deployed");
-    if(nginx)      console.log("NGINX      | Running"); else console.log("NGINX      | Dead");
-    if(mysql)      console.log("MySQL      | Running"); else console.log("MySQL      | Dead");
-    if(phpmyadmin) console.log("phpMyAdmin | Running"); else console.log("phpMyAdmin | Dead");
-    return false;
-  }
-
-  if(!nginx || !mysql || !phpmyadmin)
-    return false;
+  if(!nginx)      console.log("NGINX isn't deployed");
+  if(!mysql)      console.log("MySQL isn't deployed");
+  if(!phpmyadmin) console.log("phpMyAdmin isn't deployed");
+  if(!nginx || !mysql || !phpmyadmin) return false;
 
   return true;
 }
