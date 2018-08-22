@@ -87,6 +87,10 @@ var stuff = {
     "helpText": "Quits the program",
     "commands": null
   },
+  "y": {
+    "helpText": "zzzzzzzzzzzzzzzzzz",
+    "commands": null
+  },
   "z": {
     "helpText": "zzzzzzzzzzzzzzzzzz",
     "commands": null
@@ -177,30 +181,31 @@ RunCommandAsync = function(command, flavorText = null){return new Promise((done,
   });
 
   s.stderr.on("data", (data) => {
-    process.stdout.write(data);
+    err(data)
+    return;
   });
 
   s.on("close", (code) => {
     done();
+    return;
   });
 })}
 
 function RunCommandInDockerContainer(container, command){
+  var out = [];
+  var err = null;
+
   var s = spawnSync("docker", ["exec", container, "bash", "-c", command]);
 
   console.log(">>>", command);
 
-  if(s.stdout.length){
-    console.log("===== OUT ==============================");
-    console.log(s.stdout.toString("utf-8").trim());
-  }
+  if(s.stdout.length) out = s.stdout.toString("utf-8").trim().split("\n");
+  if(s.stderr.length) err = s.stderr.toString("utf-8").trim().split("\n");
 
-  if(s.stderr.length){
-    console.log("===== ERR ==============================");
-    console.log(s.stderr.toString("utf-8").trim());
-  }
-
-  return s;
+  return {
+    "out": out,
+    "err": err
+  };
 }
 
 function GetDockerContainerIdFromImageName(name){
@@ -373,8 +378,11 @@ Initialize = function(dockerStackName){return new Promise((done, err) => {
   fs.writeFileSync("mysql-custom-image/Dockerfile", customMySqlDockerfile, "utf-8");
 
   // NOTE: I might as well build the NGINX and phpMyAdmin images here as well!
-
-  RunCommandAsync("docker build -t mysql-custom mysql-custom-image", "Building the custom MySQL image")
+  RunCommandAsync            ("docker pull nginx"                , "Pulling NGINX")
+  .then(() => RunCommandAsync("docker pull mysql"                , "Pulling MySQL"))
+  .then(() => RunCommandAsync("docker pull phpmyadmin/phpmyadmin", "Pulling phpMyAdmin"))
+  .then(() => RunCommandAsync("docker pull node:carbon"          , "Pulling Node:Carbon"))
+  .then(() => RunCommandAsync("docker build -t mysql-custom mysql-custom-image", "Building the custom MySQL image"))
   .then(() => {
     RunCommand("rm -rf mysql-custom-image", "Removing directory mysql-custom-image");
 
@@ -408,6 +416,9 @@ Initialize = function(dockerStackName){return new Promise((done, err) => {
     }
 
     done();
+  })
+  .catch((err) => {
+    err(err);
   });
 })}
 
@@ -710,6 +721,13 @@ function VerifyIntegrity(){
 }
 
 /***************************************** MAIN FUNCTIONS *****************************************/
+y = function(args){return new Promise((done) => {
+  RunCommandAsync("docker pull mysql", "Building ONLY the base MySQL image")
+  .then(() => {
+    done();
+  });
+})}
+
 z = function(args){return new Promise((done) => {
   RunCommand("mkdir mysql-custom-image", "Creating directory mysql-custom-image");
 
@@ -751,7 +769,6 @@ initialize = function(args){return new Promise((done) => {
     .then(() => DeployDockerStack(dockerStackName))
     .then(() => {
       console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
-      console.log(`${PURPLE}NOTE: Allow a few minutes for the services to build${RESET}`);
       done();
     })
     .catch((err) => {
@@ -821,8 +838,8 @@ wizard = function(args){return new Promise((done) => {
   .then(() => BuildDockerImage(serviceName, repoName))
   .then(() => AddServiceToDockerCompose(serviceName))
   .then(() => Nconf(serviceName, urlDomain, "80"))
-  .then(() => DeployDockerStack(dockerStackName))
-  .then(() => UpdateNginx())
+  // .then(() => DeployDockerStack(dockerStackName))
+  // .then(() => UpdateNginx())
   .then(() => {
     console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
     done();
@@ -1069,11 +1086,10 @@ restore_database = function(args){return new Promise((done) => {
   var command = `aws s3 ls leif-mysql-backups`;
   var s       = RunCommandInDockerContainer(containerId, command);
 
-  if(s.stdout.length){
+  if(s["out"].length){
     // A list of files will be returned in alphanumeric order. This means that the most
-    // recent MySQL backup file will be at the end. Trim the string to remove newlines,
-    // split the string by newline, and pop the final result
-    fileName = s["out"].split("\n").pop();
+    // recent MySQL backup file will be at the end. Pop the final result
+    fileName = s["out"].pop();
 
     // The result will be something like this:
     // 2018-08-10 21:14:19     4992     mysql-backup-2018-08-10T21-14-17.sql.gz
