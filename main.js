@@ -1,13 +1,14 @@
 var fs          = require("fs");
 var yaml        = require("./yaml");
 var readline    = require("readline");
-var {spawnSync} = require("child_process");
+var {spawn, spawnSync} = require("child_process");
 const SINGLE_FILES_SHA1   = "C18FB5C7A6266BA182A0BEE66E7538A89400D48A";
 const SINGLE_FILES_TAR_GZ = "https://tundrafizz.com/temp.tar.gz";
-const CYAN  = "\x1b[36m";
-const GREEN = "\x1b[32m";
-const RED   = "\x1b[31m";
-const RESET = "\x1b[0m";
+const CYAN   = "\x1b[36m";
+const GREEN  = "\x1b[32m";
+const RED    = "\x1b[31m";
+const PURPLE = "\x1b[95m";
+const RESET  = "\x1b[0m";
 
 /* Commands are an array of objects [
   usage     : STRING,
@@ -148,10 +149,10 @@ function RunCommand(command, flavorText = null){
   for(var i = 1; i < array.length; i++)
     args.push(array[i]);
 
-  var spawn = spawnSync(cmd, args);
+  var s = spawnSync(cmd, args);
 
-  if(spawn.stdout.length) out = spawn.stdout.toString("utf-8").trim().split("\n");
-  if(spawn.stderr.length) err = spawn.stderr.toString("utf-8").trim().split("\n");
+  if(s.stdout.length) out = s.stdout.toString("utf-8").trim().split("\n");
+  if(s.stderr.length) err = s.stderr.toString("utf-8").trim().split("\n");
 
   return {
     "out": out,
@@ -159,28 +160,52 @@ function RunCommand(command, flavorText = null){
   };
 }
 
+RunCommandAsync = function(command, flavorText = null){return new Promise((done, err) => {
+  if(flavorText) console.log(`${CYAN}${flavorText}${RESET}`);
+
+  var array = command.split(" ");
+  var cmd   = array[0];
+  var args  = [];
+
+  for(var i = 1; i < array.length; i++)
+    args.push(array[i]);
+
+  var s = spawn(cmd, args);
+
+  s.stdout.on("data", (data) => {
+    process.stdout.write(data);
+  });
+
+  s.stderr.on("data", (data) => {
+    process.stdout.write(data);
+  });
+
+  s.on("close", (code) => {
+    done();
+  });
+})}
+
 function RunCommandInDockerContainer(container, command){
-  var spawn = spawnSync("docker", ["exec", container, "bash", "-c", command]);
+  var s = spawnSync("docker", ["exec", container, "bash", "-c", command]);
 
   console.log(">>>", command);
 
-  if(spawn.stdout.length){
+  if(s.stdout.length){
     console.log("===== OUT ==============================");
-    console.log(spawn.stdout.toString("utf-8").trim());
+    console.log(s.stdout.toString("utf-8").trim());
   }
 
-  if(spawn.stderr.length){
+  if(s.stderr.length){
     console.log("===== ERR ==============================");
-    console.log(spawn.stderr.toString("utf-8").trim());
+    console.log(s.stderr.toString("utf-8").trim());
   }
 
-  return spawn;
+  return s;
 }
 
 function GetDockerContainerIdFromImageName(name){
   // Get the output of all containers (docker container ls), trim the string (remove spaces/newlines from ends), and split it by newline
-  var spawn  = RunCommand("docker container ls");
-  var output = spawn["out"].split("\n");
+  var output = RunCommand("docker container ls")["out"];
   var containers = [];
 
   // Search through all containers
@@ -210,8 +235,7 @@ function GetDockerContainerIdFromImageName(name){
 
 function GetDockerServiceIdFromImageName(name){
   // Get the output of all containers (docker service ls), trim the string (remove spaces/newlines from ends), and split it by newline
-  var spawn  = RunCommand("docker service ls");
-  var output = spawn["out"].split("\n");
+  var output = RunCommand("docker service ls")["out"];
   var containers = [];
 
   // Search through all containers
@@ -241,8 +265,7 @@ function GetDockerServiceIdFromImageName(name){
 
 function GetDockerImageIdFromImageName(name){
   // Get the output of all containers (docker image ls), trim the string (remove spaces/newlines from ends), and split it by newline
-  var spawn  = RunCommand("docker image ls");
-  var output = spawn["out"].split("\n");
+  var output = RunCommand("docker image ls")["out"];
   var containers = [];
 
   // Search through all containers
@@ -349,39 +372,43 @@ Initialize = function(dockerStackName){return new Promise((done, err) => {
   customMySqlDockerfile += "RUN apt-get update && apt-get install -y nano && apt-get install -y python-pip && pip install -q awscli\n";
   fs.writeFileSync("mysql-custom-image/Dockerfile", customMySqlDockerfile, "utf-8");
 
-  RunCommand("docker build -t mysql-custom mysql-custom-image", "Building the custom MySQL image");
-  RunCommand("rm -rf mysql-custom-image", "Removing directory mysql-custom-image");
+  // NOTE: I might as well build the NGINX and phpMyAdmin images here as well!
 
-  if(!fs.existsSync("docker-compose.yml")) CreateBaseDockerCompose();
-  if(!fs.existsSync("logs"))               fs.mkdirSync("logs");
-  if(!fs.existsSync("nginx_conf.d"))       fs.mkdirSync("nginx_conf.d");
-  if(!fs.existsSync("single_files"))       fs.mkdirSync("single_files");
+  RunCommandAsync("docker build -t mysql-custom mysql-custom-image", "Building the custom MySQL image")
+  .then(() => {
+    RunCommand("rm -rf mysql-custom-image", "Removing directory mysql-custom-image");
 
-  // Get all files in single_files
+    if(!fs.existsSync("docker-compose.yml")) CreateBaseDockerCompose();
+    if(!fs.existsSync("logs"))               fs.mkdirSync("logs");
+    if(!fs.existsSync("nginx_conf.d"))       fs.mkdirSync("nginx_conf.d");
+    if(!fs.existsSync("single_files"))       fs.mkdirSync("single_files");
 
-  var createTar = RunCommand("tar -cf temp.tar single_files", "Creating temporary archive of single_files");
-  if(createTar["err"]) err(createTar["err"]);
+    // Get all files in single_files
 
-  var getSha1 = RunCommand("sha1sum temp.tar", "Getting SHA1 of the temporary archive");
-  if(getSha1["err"]) err(getSha1["err"]);
+    var createTar = RunCommand("tar -cf temp.tar single_files", "Creating temporary archive of single_files");
+    if(createTar["err"]) err(createTar["err"]);
 
-  var removeTar = RunCommand("rm temp.tar", "Removing temporary archive of single_files");
-  if(removeTar["err"]) err(removeTar["err"]);
+    var getSha1 = RunCommand("sha1sum temp.tar", "Getting SHA1 of the temporary archive");
+    if(getSha1["err"]) err(getSha1["err"]);
 
-  // Extract the SHA1 hash
-  var checksum = getSha1["out"][0];
+    var removeTar = RunCommand("rm temp.tar", "Removing temporary archive of single_files");
+    if(removeTar["err"]) err(removeTar["err"]);
 
-  if(checksum == SINGLE_FILES_SHA1){
-    console.log("SHA1 validated");
-  }else{
-    console.log("SHA1 failed validation");
-    RunCommand("rm -rf single_files", "Removing directory single_files");
-    RunCommand(`wget -O temp.tar.gz ${SINGLE_FILES_TAR_GZ}`, "Downloading .tar.gz of single_files");
-    RunCommand("tar -xzf temp.tar.gz", "Extracting .tar.gz of single_files");
-    RunCommand("rm temp.tar.gz", "Removing .tar.gz of single_files");
-  }
+    // Extract the SHA1 hash
+    var checksum = getSha1["out"][0];
 
-  done();
+    if(checksum == SINGLE_FILES_SHA1){
+      console.log("SHA1 validated");
+    }else{
+      console.log("SHA1 failed validation");
+      RunCommand("rm -rf single_files", "Removing directory single_files");
+      RunCommand(`wget -O temp.tar.gz ${SINGLE_FILES_TAR_GZ}`, "Downloading .tar.gz of single_files");
+      RunCommand("tar -xzf temp.tar.gz", "Extracting .tar.gz of single_files");
+      RunCommand("rm temp.tar.gz", "Removing .tar.gz of single_files");
+    }
+
+    done();
+  });
 })}
 
 Nconf = function(serviceName, urlDomain, port){return new Promise((done, err) => {
@@ -498,12 +525,15 @@ ConfigureSettings = function(repoName){return new Promise((done, err) => {
     return;
 
   console.log("Configuring settings:", repoName);
-  var spawn = spawnSync("nano", [configPath], {"stdio": "inherit", "detached": true});
+  spawnSync("nano", [configPath], {"stdio": "inherit", "detached": true});
+  done();
 })}
 
 BuildDockerImage = function(serviceName, repoName){return new Promise((done, err) => {
-  return spawn = RunCommand(`docker build -t ${serviceName} ${repoName}`, `Building Docker image "${repoName}" into service "${serviceName}"`);
-  ;
+  RunCommandAsync(`docker build -t ${serviceName} ${repoName}`, `Building Docker image "${repoName}" into service "${serviceName}"`)
+  .then(() => {
+    done();
+  });
 })}
 
 AddServiceToDockerCompose = function(serviceName){return new Promise((done, err) => {
@@ -520,9 +550,10 @@ AddServiceToDockerCompose = function(serviceName){return new Promise((done, err)
 
   doc["services"][serviceName] = newService;
   fs.writeFileSync("docker-compose.yml", yaml.safeDump(doc), "utf-8");
+  done();
 })}
 
-AddServiceToDockerCompose = function(serviceName){return new Promise((done, err) => {
+GenerateNginxConfForSSL = function(serviceName, urlDomain){return new Promise((done, err) => {
   var lines = [
     `upstream ${serviceName} {`                                                                                          ,
     `  server ${serviceName};`                                                                                           ,
@@ -574,6 +605,8 @@ AddServiceToDockerCompose = function(serviceName){return new Promise((done, err)
 
   for(var i = 0; i < lines.length; i++)
     fs.appendFileSync(fileName, lines[i] + "\n");
+
+  done();
 })}
 
 CreateDatabase = function(repoName){return new Promise((done, err) => {
@@ -584,8 +617,10 @@ CreateDatabase = function(repoName){return new Promise((done, err) => {
   var databasePath = `${repoName}/database.sql`;
 
   // Skip this if there's no database.sql file
-  if(!fs.existsSync(databasePath))
+  if(!fs.existsSync(databasePath)){
+    done();
     return;
+  }
 
   var attempts = 1;
   var mysqlContainerId = null;
@@ -623,11 +658,13 @@ CreateDatabase = function(repoName){return new Promise((done, err) => {
 
   for(var i = 0; i < commands.length; i++)
     RunCommandInDockerContainer(mysqlContainerId, commands[i]);
+
+  done();
 })}
 
 UpdateNginx = function(){return new Promise((done, err) => {
   RunCommand(`docker service update dolphin_nginx`, `Updating NGINX`);
-  ;
+  done();
 })}
 
 function VerifyIntegrity(){
@@ -666,28 +703,40 @@ function VerifyIntegrity(){
     }
   }
 
-  if(!nginx)      console.log("NGINX isn't deployed");
-  if(!mysql)      console.log("MySQL isn't deployed");
-  if(!phpmyadmin) console.log("phpMyAdmin isn't deployed");
-  if(!nginx || !mysql || !phpmyadmin) return false;
+  if(!nginx || !mysql || !phpmyadmin)
+    return false;
 
   return true;
 }
 
 /***************************************** MAIN FUNCTIONS *****************************************/
 z = function(args){return new Promise((done) => {
-  var repoUrl = "git@github.com:TundraFizz/Coss-Stats.git";
+  RunCommand("mkdir mysql-custom-image", "Creating directory mysql-custom-image");
 
-  CloneRepository(repoUrl)
+  // Create a temporary Dockerfile for a custom MySQL image that will update itself and install the following:
+  // - nano
+  // - python-pip
+  // - awscli
+  var customMySqlDockerfile = "FROM mysql\n";
+  customMySqlDockerfile += "RUN apt-get update && apt-get install -y nano && apt-get install -y python-pip && pip install -q awscli\n";
+  fs.writeFileSync("mysql-custom-image/Dockerfile", customMySqlDockerfile, "utf-8");
+
+  RunCommandAsync("docker build -t mysql-custom mysql-custom-image", "Building the custom MySQL image")
   .then(() => {
-    console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
-    done();
-  })
-  .catch((err) => {
-    console.log(`${RED}===================== ERROR ======================${RESET}`);
-    console.log(err);
     done();
   });
+  // RunCommand("rm -rf mysql-custom-image", "Removing directory mysql-custom-image");
+
+  // CloneRepository(repoUrl)
+  // .then(() => {
+  //   console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
+  //   done();
+  // })
+  // .catch((err) => {
+  //   console.log(`${RED}===================== ERROR ======================${RESET}`);
+  //   console.log(err);
+  //   done();
+  // });
 })}
 
 initialize = function(args){return new Promise((done) => {
@@ -698,10 +747,11 @@ initialize = function(args){return new Promise((done) => {
     done();
   }else{
     Initialize(dockerStackName)
-    .then(Nconf("phpmyadmin", null, "9000"))
-    .then(DeployDockerStack(dockerStackName))
+    .then(() => Nconf("phpmyadmin", null, "9000"))
+    .then(() => DeployDockerStack(dockerStackName))
     .then(() => {
       console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
+      console.log(`${PURPLE}NOTE: Allow a few minutes for the services to build${RESET}`);
       done();
     })
     .catch((err) => {
@@ -719,6 +769,7 @@ wizard = function(args){return new Promise((done) => {
 
   if(!VerifyIntegrity()){
     console.log("Dolphin isn't initialized, run this command first: initialize");
+    console.log("Also check the status on NGINX, MySQL, and phpMyAdmin");
     done();
     return;
   }
@@ -765,13 +816,13 @@ wizard = function(args){return new Promise((done) => {
   console.log("==================================================");
 
   CloneRepository(repoUrl)
-  .then(ConfigureSettings(repoName))
-  .then(CreateDatabase(repoName))
-  .then(BuildDockerImage(serviceName, repoName))
-  .then(AddServiceToDockerCompose(serviceName))
-  .then(Nconf(serviceName, urlDomain, "80"))
-  .then(DeployDockerStack(dockerStackName))
-  .then(UpdateNginx())
+  .then(() => ConfigureSettings(repoName))
+  .then(() => CreateDatabase(repoName))
+  .then(() => BuildDockerImage(serviceName, repoName))
+  .then(() => AddServiceToDockerCompose(serviceName))
+  .then(() => Nconf(serviceName, urlDomain, "80"))
+  .then(() => DeployDockerStack(dockerStackName))
+  .then(() => UpdateNginx())
   .then(() => {
     console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
     done();
@@ -840,7 +891,7 @@ nuke_everything = function(args){return new Promise((done) => {
 
       for(var i = 0; i < listOfImages.length; i++)
         if(listOfImages[i])
-          var spawn = RunCommand(`docker rmi -f ${listOfImages[i]}`, `Deleted Image: ${listOfImages[i]}`);
+          RunCommand(`docker rmi -f ${listOfImages[i]}`, `Deleted Image: ${listOfImages[i]}`);
     }
   }
 
@@ -871,21 +922,21 @@ nuke_everything = function(args){return new Promise((done) => {
 })}
 
 view_all = function(args){return new Promise((done) => {
-  var spawn;
+  var s;
 
   RunCommand("clear");
 
-  spawn = RunCommand("docker stack ls");
-  if(spawn["out"]) spawn["out"].Display();
+  s = RunCommand("docker stack ls");
+  if(s["out"]) s["out"].Display();
 
-  spawn = RunCommand("docker service ls");
-  if(spawn["out"]) spawn["out"].Display();
+  s = RunCommand("docker service ls");
+  if(s["out"]) s["out"].Display();
 
-  spawn = RunCommand("docker container ls");
-  if(spawn["out"]) spawn["out"].Display();
+  s = RunCommand("docker container ls");
+  if(s["out"]) s["out"].Display();
 
-  spawn = RunCommand("docker volume ls");
-  if(spawn["out"]) spawn["out"].Display();
+  s = RunCommand("docker volume ls");
+  if(s["out"]) s["out"].Display();
 
   done();
 })}
@@ -912,12 +963,12 @@ ssl = function(args){return new Promise((done) => {
      -w /ssl_challenge --staging -d mudki.ps                */
 
   var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`;
-  var spawn = RunCommand(hugeCommand);
+  var s = RunCommand(hugeCommand);
 
   console.log("=== OUT ===================================================");
-  if(spawn.stdout.length) console.log(spawn["out"]);
+  if(s.stdout.length) console.log(s["out"]);
   console.log("=== ERR ===================================================");
-  if(spawn.stderr.length) console.log(spawn["out"]);
+  if(s.stderr.length) console.log(s["out"]);
   console.log("===========================================================");
 
   // Generate a new Nginx config file for the service
@@ -928,7 +979,7 @@ ssl = function(args){return new Promise((done) => {
 
   // I DON'T THINK THIS WORKS, ONLY RESTARTING THE CONTAINER DOES!
   // Reload the Nginx config files inside of the Nginx container
-  // spawn = RunCommand(`docker exec -i ${nginxContainerId} nginx -s reload`);
+  // s = RunCommand(`docker exec -i ${nginxContainerId} nginx -s reload`);
 
   done();
 })}
@@ -1016,13 +1067,13 @@ restore_database = function(args){return new Promise((done) => {
   var containerId = GetDockerContainerIdFromImageName("mysql");
 
   var command = `aws s3 ls leif-mysql-backups`;
-  var spawn   = RunCommandInDockerContainer(containerId, command);
+  var s       = RunCommandInDockerContainer(containerId, command);
 
-  if(spawn.stdout.length){
+  if(s.stdout.length){
     // A list of files will be returned in alphanumeric order. This means that the most
     // recent MySQL backup file will be at the end. Trim the string to remove newlines,
     // split the string by newline, and pop the final result
-    fileName = spawn["out"].split("\n").pop();
+    fileName = s["out"].split("\n").pop();
 
     // The result will be something like this:
     // 2018-08-10 21:14:19     4992     mysql-backup-2018-08-10T21-14-17.sql.gz
@@ -1133,7 +1184,7 @@ function Main(){
 
   rl.on("line", function(input){
     ProcessInput(input)
-    .then(o => {
+    .then((o) => {
       if(o == "prompt") rl.prompt();
       if(o == "close")  rl.close();
     });
@@ -1145,9 +1196,10 @@ function Main(){
 Main();
 
 /***** TODO *****/
-// Display text on what happens
-// Handle errors
-// remove_service
+// Completely replace "RunCommand" with "RunCommandAsync" so that it can easily do the following:
+// - Display text on what happens
+// - Handle errors
+//
+// New Feature: remove_service
 
-// Create a zipped archive
-// tar -zcf temp.tar.gz single_files
+// Create a zipped archive: tar -zcf temp.tar.gz single_files
