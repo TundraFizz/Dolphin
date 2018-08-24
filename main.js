@@ -963,6 +963,10 @@ ssl = function(args){return new Promise((done) => {
   var urlDomain   = "coss-stats.io";
   var containerId = GetDockerContainerIdFromImageName("nginx");
 
+  // Pick one
+  var forceRenew = "--force-renew";
+  var forceRenew = "";
+
   // The NGINX container wasn't found
   if(!containerId){
     console.log("Couldn't find NGINX container; SSL certificate not generated");
@@ -979,13 +983,13 @@ ssl = function(args){return new Promise((done) => {
      --register-unsafely-without-email --webroot --agree-tos \
      -w /ssl_challenge --staging -d mudki.ps                */
 
-  var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`;
+  var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain} ${forceRenew}`;
   var s = RunCommand(hugeCommand);
 
   console.log("=== OUT ===================================================");
-  if(s.stdout.length) console.log(s["out"]);
+  if(s["out"]) console.log(s["out"]);
   console.log("=== ERR ===================================================");
-  if(s.stderr.length) console.log(s["out"]);
+  if(s["err"]) console.log(s["err"]);
   console.log("===========================================================");
 
   // Generate a new Nginx config file for the service
