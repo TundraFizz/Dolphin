@@ -38,3 +38,17 @@ bash setup.sh
 
 docker swarm init
 ```
+
+# CentOS initialization
+
+```
+curl --silent --location https://rpm.nodesource.com/setup_8.x | sudo bash -
+sudo yum -y install nodejs git
+git clone https://github.com/TundraFizz/Dolphin && cd Dolphin
+ssh-keygen -q -N "" -f ~/.ssh/id_rsa
+cat ~/.ssh/id_rsa.pub
+^ Add the above output to: https://github.com/settings/keys
+bash setup.sh
+docker swarm init
+node main.js
+```
