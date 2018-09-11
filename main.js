@@ -464,6 +464,10 @@ Nconf = function(serviceName, urlDomain, port){return new Promise((done, err) =>
 })}
 
 DeployDockerStack = function(dockerStack){return new Promise((done, err) => {
+  // TODO: Remove ALL containers first!
+  // This makes sure that all containers have the latest version
+  // The service will automatically spin up new containers to replace the removed ones
+
   var res = RunCommand(`docker stack deploy -c docker-compose.yml ${dockerStack}`, `Deploying to stack: ${dockerStack}`);
 
   if(res["out"]) res["out"].Display();
