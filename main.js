@@ -963,8 +963,8 @@ view_all = function(args){return new Promise((done) => {
 })}
 
 ssl = function(args){return new Promise((done) => {
-  var serviceName = "coss-stats";
-  var urlDomain   = "coss-stats.io";
+  var serviceName = "bek-backend";
+  var urlDomain   = "tundrafizz.com";
   var containerId = GetDockerContainerIdFromImageName("nginx");
 
   // Pick one
@@ -987,7 +987,8 @@ ssl = function(args){return new Promise((done) => {
      --register-unsafely-without-email --webroot --agree-tos \
      -w /ssl_challenge --staging -d mudki.ps                */
 
-  var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain} ${forceRenew}`;
+  // var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain} ${forceRenew}`;
+  var hugeCommand = `docker run -i --rm --name certbot -v dolphin_ssl:/etc/letsencrypt -v dolphin_ssl_challenge:/ssl_challenge certbot/certbot certonly --register-unsafely-without-email --webroot --agree-tos -w /ssl_challenge -d ${urlDomain}`;
   var s = RunCommand(hugeCommand);
 
   console.log("=== OUT ===================================================");
