@@ -532,8 +532,10 @@ ConfigureSettings = function(repoName){return new Promise((done, err) => {
   var configPath = `${repoName}/config.yml`;
 
   // Skip this if there's no config.yml file
-  if(!fs.existsSync(configPath))
+  if(!fs.existsSync(configPath)){
+    done();
     return;
+  }
 
   console.log("Configuring settings:", repoName);
   spawnSync("nano", [configPath], {"stdio": "inherit", "detached": true});
@@ -838,7 +840,9 @@ wizard = function(args){return new Promise((done) => {
   .then(() => BuildDockerImage(serviceName, repoName))
   .then(() => AddServiceToDockerCompose(serviceName))
   .then(() => Nconf(serviceName, urlDomain, "80"))
-  // .then(() => DeployDockerStack(dockerStackName))
+  // docker stack deploy -c docker-compose.yml dolphin
+  // docker service update dolphin_nginx
+  // .then(() => DeployDockerStack(dockerStackName)) // See if there's a better way to do this
   // .then(() => UpdateNginx())
   .then(() => {
     console.log(`${GREEN}=================== COMPLETED ====================${RESET}`);
