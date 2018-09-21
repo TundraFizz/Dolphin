@@ -31,7 +31,7 @@ CMD ["npm", "start"]
 # [Installing Node.js](https://nodejs.org/en/download/package-manager/)
 
 ```
-curl --silent --location https://rpm.nodesource.com/setup_8.x | sudo bash -
+curl --silent --location https://rpm.nodesource.com/setup_10.x | sudo bash -
 sudo yum -y install nodejs
 
 bash setup.sh
@@ -42,7 +42,7 @@ docker swarm init
 # CentOS initialization
 
 ```
-curl --silent --location https://rpm.nodesource.com/setup_8.x | sudo bash -
+curl --silent --location https://rpm.nodesource.com/setup_10.x | sudo bash -
 sudo yum -y install nodejs git
 git clone https://github.com/TundraFizz/Dolphin && cd Dolphin
 ssh-keygen -q -N "" -f ~/.ssh/id_rsa
